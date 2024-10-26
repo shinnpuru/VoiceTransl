@@ -13,3 +13,4 @@ gradio
 yt-dlp
 pysrt
 bilibili-dl
+qfluentwidgets
