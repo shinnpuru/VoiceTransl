@@ -1,11 +1,10 @@
 import sys
 import os
 import shutil
-from threading import Thread
-from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame, QScrollArea
+from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame
 from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, LineEdit as QLineEdit, ComboBox as QComboBox, Slider as QSlider, FluentWindow as QMainWindow
 from qfluentwidgets import FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel
-from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal
 
 TRANSLATOR_SUPPORTED = [
     '不进行翻译',
@@ -144,7 +143,7 @@ class MainWindow(QMainWindow):
         self.settings_layout.addWidget(SubtitleLabel("🗣️ 语音识别AI模型"))
         self.settings_layout.addWidget(BodyLabel("选择用于语音识别的 Whisper 模型文件。"))
         self.whisper_file = QComboBox()
-        whisper_lst = [i for i in os.listdir('whisper') if i.startswith('ggml') and i.endswith('bin')]
+        whisper_lst = [i for i in os.listdir('.') if i.startswith('ggml') and i.endswith('bin')]
         self.whisper_file.addItems(whisper_lst)
         self.settings_layout.addWidget(self.whisper_file)
         
@@ -162,7 +161,7 @@ class MainWindow(QMainWindow):
         
         self.settings_layout.addWidget(BodyLabel("📦 离线模型文件"))
         self.sakura_file = QComboBox()
-        sakura_lst = [i for i in os.listdir('llama') if i.endswith('gguf')]
+        sakura_lst = [i for i in os.listdir('.') if i.endswith('gguf')]
         self.sakura_file.addItems(sakura_lst)
         self.settings_layout.addWidget(self.sakura_file)
         
@@ -248,6 +247,8 @@ class MainWorker(QObject):
         self.master = master
         self.status = master.status
         self.log = open('log.txt', 'w', encoding='utf-8')
+        sys.stdout = self.log
+        sys.stderr = self.log
 
     def run(self):
         self.status.emit("[INFO] 正在读取配置...")
@@ -366,7 +367,7 @@ class MainWorker(QObject):
                 self.pid.wait()
 
                 self.status.emit("[INFO] 正在进行语音识别...")
-                self.pid = subprocess.Popen(['whisper/main.exe', '-m', 'whisper/'+whisper_file, '-osrt', '-l', 'ja', input_file+'.wav', '-of', input_file], stdout=self.log, stderr=self.log)
+                self.pid = subprocess.Popen(['whisper/main.exe', '-m', whisper_file, '-osrt', '-l', 'ja', input_file+'.wav', '-of', input_file], stdout=self.log, stderr=self.log)
                 self.pid.wait()
 
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file)+'.json')
@@ -437,7 +438,7 @@ class MainWorker(QObject):
                     continue
 
                 import subprocess
-                self.pid = subprocess.Popen(['llama/server.exe', '-m', 'llama/'+sakura_file, '-c', '2048', '-ngl' , str(sakura_mode), '--host', '127.0.0.1', '--port', '8989'], stdout=self.log, stderr=self.log)
+                self.pid = subprocess.Popen(['llama/server.exe', '-m', sakura_file, '-c', '2048', '-ngl' , str(sakura_mode), '--host', '127.0.0.1', '--port', '8989'], stdout=self.log, stderr=self.log)
 
             self.status.emit("[INFO] 正在进行翻译...")
             from GalTransl.__main__ import worker

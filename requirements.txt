@@ -13,4 +13,5 @@ gradio
 yt-dlp
 pysrt
 bilibili-dl
-qfluentwidgets
+PyQt-Fluent-Widgets
+pyinstaller

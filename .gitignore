@@ -12,3 +12,6 @@ project/
 python_embeded/
 *.gguf
 faster-whisper*/
+build/
+dist/
+*.spec
