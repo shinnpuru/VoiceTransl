@@ -14,4 +14,7 @@ torch
 gradio
 yt-dlp
 pysrt
+bilibili-dl
+llama-cpp-python
 --extra-index-url  https://download.pytorch.org/whl/cu121
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121

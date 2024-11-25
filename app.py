@@ -108,7 +108,7 @@ def worker(input_files, yt_url, model_size, translator, gpt_token, sakura_file, 
                 input_file  = input_file,
                 output_folder = 'sampleProject/gt_input',
                 model_size    = model_size,
-                language      = 'auto',
+                language      = 'ja',
                 precision     = 'float16',
             )
             print("语音识别完成！")
@@ -178,7 +178,7 @@ def worker(input_files, yt_url, model_size, translator, gpt_token, sakura_file, 
                 continue
 
             import subprocess
-            pid = subprocess.Popen(['llama/server.exe', '-m', sakura_file, '-c', '2048', '-ngl' , str(sakura_mode), '--host', '127.0.0.1'])
+            pid = subprocess.Popen(['python', '-m', 'llama_cpp.server', '--model', sakura_file, '--n_ctx', '2048', '--n_gpu_layers' , str(sakura_mode), '--host', '127.0.0.1', '--port', '8080'])
 
         print("正在进行翻译...")
         from GalTransl.__main__ import worker
@@ -192,8 +192,6 @@ def worker(input_files, yt_url, model_size, translator, gpt_token, sakura_file, 
 
         if 'sakura' in translator:
             pid.kill()
-
-    os.startfile(os.path.join(os.getcwd(),'sampleProject/cache'))
 
 def cleaner():
     print("正在清理中间文件...")
@@ -223,10 +221,12 @@ with gr.Blocks() as demo:
     with gr.Accordion("3. 字幕翻译（可选）", open=False):
         translator = gr.Radio(
             label="请选择翻译模型：",
-            choices=TRANSLATOR_SUPPORTED
+            choices=TRANSLATOR_SUPPORTED,
+            value="Galtransl"
         )
         gpt_token = gr.Textbox(label="请输入在线模型API令牌。 (如果选择GPT, Moonshot, Qwen, GLM, MiniMax/abab)", placeholder="留空为使用上次配置的Token。")
-        sakura_file = gr.Dropdown(label="请选择本地模型文件。(如果选择Sakura, Index, Galtransl）", choices=[i for i in os.listdir('.') if i.endswith('gguf')])
+        model_list = [i for i in os.listdir('.') if i.endswith('gguf')]
+        sakura_file = gr.Dropdown(label="请选择本地模型文件。(如果选择Sakura, Index, Galtransl）", choices=model_list, value=model_list[0])
         sakura_mode = gr.Slider(label="请选择本地模型模式，0代表完全使用CPU，999代表完全使用GPU。 (如果选择Sakura, Index, Galtransl）", minimum=0, maximum=999, step=1, value=999)
     with gr.Accordion("4. 翻译字典（可选）", open=False):
         with gr.Row():
@@ -235,10 +235,21 @@ with gr.Blocks() as demo:
             after_dict = gr.Textbox(label="输出替换字典。（中文到中文）", placeholder="中文\t中文\n中文\t中文")
 
 
-    run = gr.Button("5. 运行（状态详情请见命令行，完成后打开输出文件夹）")
+    run = gr.Button("5. 运行（状态详情请见命令行）")
     clean = gr.Button("6.清空输入输出缓存（请在保存完成后点击）")
+    files = gr.FileExplorer(root_dir="sampleProject/cache",file_count="single")
+    refresh = gr.Button("7. 刷新文件列表")
+    download = gr.DownloadButton("8. 下载（单选）")
+
+    def update_file1():
+        return gr.FileExplorer(root_dir=".",file_count="single")
+    def update_file2():
+        return gr.FileExplorer(root_dir="sampleProject/cache",file_count="single")
+
+    refresh.click(update_file1, outputs=files).then(update_file2, outputs=files)
 
     run.click(worker, inputs=[input_file, yt_url, model_size, translator, gpt_token, sakura_file, sakura_mode, proxy_address, before_dict, gpt_dict, after_dict], queue=True)
     clean.click(cleaner, inputs=[])
+    files.change(lambda x: x, files, download)
 
-demo.queue().launch(inbrowser=True, server_name='0.0.0.0')
+demo.queue().launch(inbrowser=True, server_name='0.0.0.0', server_port=6006)
