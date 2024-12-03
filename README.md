@@ -1,11 +1,12 @@
 
-<div align=center><img width="150" height="150" src="./img/logo.png"/></div>
-
 <h1><p align='center' >GalTransl for ASMR</p></h1>
-<div align=center><img src="https://img.shields.io/github/v/release/XD2333/GalTransl"/>   <img src="https://img.shields.io/github/license/XD2333/GalTransl"/>   <img src="https://img.shields.io/github/stars/XD2333/GalTransl"/></div>
-<p align='center' >支持GPT3.5/4/Newbing等大语言模型的ASMR自动化翻译解决方案</p>
+<div align=center><img src="https://img.shields.io/github/v/release/shinnpuru/GalTransl-for-ASMR"/>   <img src="https://img.shields.io/github/license/shinnpuru/GalTransl-for-ASMR"/>   <img src="https://img.shields.io/github/stars/shinnpuru/GalTransl-for-ASMR"/></div>
   
-  GalTransl是一套将数个基础功能上的微小创新与对GPT提示工程（Prompt Engineering）的深度利用相结合的Galgame自动化翻译工具，用于制作内嵌式翻译补丁。 GalTransl for ASMR是GalTransl的一个分支，您可以使用本程序将日语音视频文件/字幕文件转换为中文字幕文件。
+GalTransl for ASMR是一个离线AI视频字幕生成和翻译软件，您可以使用本程序将日语音视频文件/字幕文件转换为中文字幕文件。
+
+<div align=center><img width="500" height="250" src="./title.png"/></div>
+
+
 
 ## 特色
 
@@ -18,9 +19,11 @@
 
 ## 使用
 
-1. 创建环境：运行 `build_environment.bat`。如果你没有Python请在[微软商店](https://apps.microsoft.com/detail/9nrwmjp3717k)下载，请使用3.11及以上版本。脚本使用了国内镜像，如果是国外用户请删去bat文件第二行。
+### 请注意本分支是服务器部署分支，需要配置Python环境。
 
-2. 启动：运行 `run_web_demo.bat`，按照数字提示进行。
+1. 创建环境：运行 `build_environment.bat` 或 `build_environment.sh`。脚本使用了国内镜像，如果是国外用户请删去bat文件第二行。
+
+2. 启动：运行 `build_environment.bat` 或 `run_web_demo.sh`，按照数字提示进行。
 
 * 听写模型（Faster-Whisper）模型会在第一次使用的时候自动下载，脚本使用了国内镜像，如果是国外用户请删去bat文件第一行。
 
