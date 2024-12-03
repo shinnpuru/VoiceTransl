@@ -178,7 +178,7 @@ def worker(input_files, yt_url, model_size, translator, gpt_token, sakura_file, 
                 continue
 
             import subprocess
-            pid = subprocess.Popen(['python', '-m', 'llama_cpp.server', '--model', sakura_file, '--n_ctx', '2048', '--n_gpu_layers' , str(sakura_mode), '--host', '127.0.0.1', '--port', '8080'])
+            pid = subprocess.Popen(['./venv/Scripts/python', '-m', 'llama_cpp.server', '--model', sakura_file, '--n_ctx', '2048', '--n_gpu_layers' , str(sakura_mode), '--host', '127.0.0.1', '--port', '8080'])
 
         print("正在进行翻译...")
         from GalTransl.__main__ import worker
