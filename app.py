@@ -1,6 +1,7 @@
 import sys, os
 
 os.chdir(sys._MEIPASS)
+
 import shutil
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal
@@ -87,6 +88,7 @@ class MainWindow(QMainWindow):
                 sakura_file = lines[6].strip()
                 sakura_mode = int(lines[7].strip())
                 proxy_address = lines[8].strip()
+                openvino_devices = lines[9].strip()
 
                 if self.whisper_file: self.whisper_file.setCurrentText(whisper_file)
                 self.translator_group.setCurrentText(translator)
@@ -97,6 +99,7 @@ class MainWindow(QMainWindow):
                 self.sakura_file.setCurrentText(sakura_file)
                 self.sakura_mode.setValue(sakura_mode)
                 self.proxy_address.setText(proxy_address)
+                self.openvino_devices.setText(openvino_devices)
 
     def initAboutTab(self):
         self.about_tab = Widget("About", self)
@@ -208,7 +211,15 @@ class MainWindow(QMainWindow):
         self.input_lang = QComboBox()
         self.input_lang.addItems(['ja','en','ko','ru','fr'])
         self.settings_layout.addWidget(self.input_lang)
-        
+
+        self.settings_layout.addWidget(BodyLabel("选择OpenVINO设备"))
+        import openvino as ov
+        core = ov.Core()
+        core.available_devices
+        self.openvino_devices = QComboBox()
+        self.openvino_devices.addItems([core.available_devices])
+        self.settings_layout.addWidget(self.openvino_devices)
+
         # Translator Section
         self.settings_layout.addWidget(BodyLabel("🌍 翻译AI模型：选择用于翻译的模型类别。（必选）"))
         self.translator_group = QComboBox()
@@ -459,10 +470,11 @@ class MainWorker(QObject):
         before_dict = self.master.before_dict.toPlainText()
         gpt_dict = self.master.gpt_dict.toPlainText()
         after_dict = self.master.after_dict.toPlainText()
+        openvino_devices = self.master.openvino_devices.setText()
 
         # save config
         with open('config.txt', 'w', encoding='utf-8') as f:
-            f.write(f"{whisper_file}\n{translator}\n{language}\n{gpt_token}\n{gpt_address}\n{gpt_model}\n{sakura_file}\n{sakura_mode}\n{proxy_address}\n")
+            f.write(f"{whisper_file}\n{translator}\n{language}\n{gpt_token}\n{gpt_address}\n{gpt_model}\n{sakura_file}\n{sakura_mode}\n{proxy_address}\n{openvino_devices}\n")
 
         self.status.emit("[INFO] 正在初始化项目文件夹...")
 
@@ -628,7 +640,7 @@ class MainWorker(QObject):
                 self.status.emit("[INFO] 正在进行语音识别...")
 
                 if whisper_file.startswith('ggml'):
-                    self.pid = subprocess.Popen(['whisper/main', '-m', 'whisper/'+whisper_file, '-osrt', '-l', language, input_file+'.wav', '-of', input_file])
+                    self.pid = subprocess.Popen(['whisper/main', '-m', 'whisper/'+whisper_file, '-osrt', '-l', language, input_file+'.wav', '-of', input_file, "-oved", ])
                 else:
                     self.pid = subprocess.Popen(['Whisper-Faster/whisper-faster.exe', '--beep_off', '--verbose', 'True', '--model', whisper_file[15:], '--model_dir', 'Whisper-Faster', '--task', 'transcribe', '--language', language, '--output_format', 'srt', '--output_dir', os.path.dirname(input_file), input_file+'.wav'])
                 self.pid.wait()
