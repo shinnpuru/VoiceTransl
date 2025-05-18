@@ -1,0 +1,514 @@
+/* Global Resets and Base Styles */
+:root {
+    --primary-color: #2c3e50; /* Dark Blue Grey */
+    --secondary-color: #3498db; /* Bright Blue */
+    --accent-color: #e74c3c; /* Red */
+    --light-grey: #ecf0f1;
+    --dark-grey: #34495e;
+    --text-color: #333;
+    --light-text-color: #f8f9fa;
+    --card-bg: #ffffff;
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --border-radius: 8px;
+    --font-family: 'Roboto', sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-family);
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: #f4f7f6; /* Off-white background */
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Header */
+header {
+    background-color: var(--primary-color);
+    color: var(--light-text-color);
+    padding: 1rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header .logo-title {
+    display: flex;
+    align-items: center;
+}
+
+header .Micon { /* Material Icon in header */
+    font-size: 2.5rem; /* Increased size */
+    margin-right: 0.75rem; /* Spacing */
+    color: var(--secondary-color); /* Accent color for icon */
+}
+
+
+header h1 {
+    font-size: 1.8rem;
+    font-weight: 500;
+}
+
+header nav a {
+    color: var(--light-text-color);
+    text-decoration: none;
+    margin-left: 1.5rem;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+header nav a:hover, header nav a:focus {
+    color: var(--secondary-color);
+}
+
+/* Hero Section */
+#hero {
+    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+    color: var(--light-text-color);
+    padding: 6rem 0;
+    text-align: center;
+}
+
+#hero .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+}
+
+@media (min-width: 768px) {
+    #hero .container {
+        flex-direction: row;
+        text-align: left;
+    }
+    #hero .hero-content {
+        flex: 1;
+    }
+    #hero .hero-image {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+}
+
+
+#hero .main-title {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    line-height: 1.2;
+}
+
+#hero .subtitle {
+    font-size: 1.5rem;
+    font-weight: 300;
+    margin-bottom: 1.5rem;
+}
+
+#hero .badges img {
+    margin: 0 0.3rem 1rem;
+}
+
+#hero .small-text {
+    font-size: 0.9rem;
+    margin-top: 1.5rem;
+    opacity: 0.9;
+}
+#hero .small-text a {
+    color: var(--light-grey);
+    text-decoration: underline;
+}
+
+#hero .hero-image img {
+    max-width: 100%;
+    height: auto;
+    width: 512px; /* As per README */
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 0.8rem 1.8rem;
+    border-radius: var(--border-radius);
+    text-decoration: none;
+    font-weight: 500;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    margin: 0.5rem;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1.5; /* Ensure text is vertically centered */
+    display: inline-flex; /* For aligning icon and text */
+    align-items: center; /* For aligning icon and text */
+    gap: 0.5rem; /* Space between icon and text */
+}
+.btn .material-icons { /* Icon within button */
+    font-size: 1.2em; /* Relative to button text size */
+}
+
+
+.btn-primary {
+    background-color: var(--secondary-color);
+    color: var(--light-text-color);
+}
+
+.btn-primary:hover, .btn-primary:focus {
+    background-color: #2980b9; /* Darker shade of secondary */
+    transform: translateY(-2px);
+}
+
+.btn-secondary {
+    background-color: transparent;
+    color: var(--light-text-color); /* For hero */
+    border: 2px solid var(--light-text-color); /* For hero */
+}
+.section .btn-secondary { /* Button secondary in normal sections */
+    color: var(--secondary-color);
+    border: 2px solid var(--secondary-color);
+}
+
+
+.btn-secondary:hover, .btn-secondary:focus {
+    background-color: var(--light-text-color); /* For hero */
+    color: var(--secondary-color); /* For hero */
+    transform: translateY(-2px);
+}
+
+.section .btn-secondary:hover, .section .btn-secondary:focus {
+    background-color: var(--secondary-color);
+    color: var(--light-text-color);
+}
+
+
+.btn-large {
+    padding: 1rem 2.5rem;
+    font-size: 1.1rem;
+}
+
+
+/* Sections */
+.section {
+    padding: 4rem 0;
+}
+.section h2 {
+    text-align: center;
+    font-size: 2.2rem;
+    font-weight: 500;
+    margin-bottom: 3rem;
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.section h2 .material-icons {
+    font-size: 2.5rem; /* Match h2 size */
+    color: var(--secondary-color);
+}
+
+
+.bg-light {
+    background-color: var(--light-grey);
+}
+.bg-dark {
+    background-color: var(--dark-grey);
+}
+.text-light p {
+    color: var(--light-text-color);
+}
+.text-light h2 {
+    color: var(--light-text-color);
+}
+.text-center {
+    text-align: center;
+}
+
+
+/* Feature Grid */
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.card {
+    background-color: var(--card-bg);
+    padding: 2rem;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.card .card-icon .material-icons {
+    font-size: 3rem;
+    color: var(--secondary-color);
+    margin-bottom: 1rem;
+}
+
+.card h3 {
+    font-size: 1.3rem;
+    margin-bottom: 0.75rem;
+    color: var(--primary-color);
+}
+
+.card p {
+    font-size: 0.95rem;
+    color: #555;
+}
+
+/* Modes Section */
+.modes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.mode-card {
+    background-color: var(--card-bg);
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.mode-card .mode-icon .material-icons {
+    font-size: 2.5rem;
+    color: var(--accent-color);
+    margin-bottom: 1rem;
+    background-color: var(--light-grey);
+    padding: 1rem;
+    border-radius: 50%;
+}
+
+.mode-card h3 {
+    font-size: 1.4rem;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+
+.mode-card p {
+    font-size: 0.9rem;
+    color: #666;
+    flex-grow: 1;
+}
+
+
+/* Download Section */
+#download p {
+    text-align: center;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+}
+#download .btn-large {
+    display: block; /* Make button block to center it */
+    width: fit-content;
+    margin: 1rem auto 0; /* Center the button */
+}
+
+
+/* Tutorial Section */
+#tutorial p {
+    text-align: center;
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+}
+#tutorial .btn-secondary {
+    display: block; /* Make button block to center it */
+    width: fit-content;
+    margin: 0 auto; /* Center the button */
+}
+
+
+/* Disclaimer */
+#disclaimer p {
+    font-size: 0.95rem;
+    line-height: 1.7;
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+/* Footer */
+footer {
+    background-color: var(--dark-grey);
+    color: #ccc;
+    text-align: center;
+    padding: 2rem 0;
+    font-size: 0.9rem;
+}
+
+footer a {
+    color: var(--secondary-color);
+    text-decoration: none;
+}
+footer a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    header .container {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    header nav {
+        margin-top: 0.5rem;
+    }
+    header nav a {
+        margin: 0 0.7rem;
+    }
+
+    #hero .main-title {
+        font-size: 2.8rem;
+    }
+    #hero .subtitle {
+        font-size: 1.2rem;
+    }
+    .section h2 {
+        font-size: 1.8rem;
+    }
+    .section h2 .material-icons {
+        font-size: 2rem;
+    }
+
+    .feature-grid, .modes-grid {
+        grid-template-columns: 1fr; /* Stack cards on smaller screens */
+    }
+}
+
+@media (max-width: 480px) {
+    #hero .main-title {
+        font-size: 2.2rem;
+    }
+    #hero .subtitle {
+        font-size: 1rem;
+    }
+    .btn {
+        padding: 0.7rem 1.2rem;
+        font-size: 0.9rem;
+    }
+    header nav a {
+        display: block;
+        margin: 0.5rem 0;
+        text-align: center;
+    }
+}
+
+/* Sponsor Section */
+#sponsor .intro-message {
+    font-size: 1.1rem;
+    margin-bottom: 2.5rem;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.sponsor-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem; /* Increased gap for better separation */
+    margin-bottom: 2.5rem;
+}
+
+.sponsor-card {
+    background-color: var(--card-bg);
+    padding: 2rem 1.5rem; /* Adjusted padding */
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border-top: 4px solid var(--secondary-color); /* Consistent with other cards */
+}
+
+.sponsor-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15); /* Slightly more pronounced shadow on hover */
+}
+
+.sponsor-card .sponsor-badge {
+    height: 30px; /* Adjust size as needed */
+    margin-bottom: 1rem;
+    border-radius: 4px; /* Soften edges of badge if it's not an SVG with its own radius */
+}
+
+.sponsor-card .sponsor-icon { /* If you choose to use Material Icons instead of badges */
+    font-size: 3rem;
+    color: var(--primary-color); /* Use primary pink for icons */
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    background-color: var(--light-pink-bg); /* Light pink background circle */
+    border-radius: 50%;
+}
+
+.sponsor-card h3 {
+    font-size: 1.4rem; /* Slightly larger heading */
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+
+.sponsor-card p {
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 1.5rem; /* More space before button */
+    flex-grow: 1; /* Pushes button to bottom if card heights vary */
+}
+
+.btn-sponsor {
+    background-color: var(--secondary-color); /* Lighter pink for sponsor buttons */
+    color: var(--light-text-color);
+    width: 80%; /* Make buttons a bit wider */
+    margin-top: auto; /* Aligns button to the bottom if text above varies */
+}
+
+.btn-sponsor:hover, .btn-sponsor:focus {
+    background-color: var(--accent-color); /* Darker pink on hover */
+    color: var(--light-text-color);
+    transform: translateY(-2px);
+}
+
+#sponsor .thanks-message {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--primary-color); /* Use primary pink for emphasis */
+    margin-top: 2rem;
+}
