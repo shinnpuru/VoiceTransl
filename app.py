@@ -874,16 +874,19 @@ class MainWorker(QObject):
                     self.status.emit("[INFO] 不进行听写，跳过听写步骤...")
                     continue
 
+                wav_file = '.'.join(input_file.split('.')[:-1]) + '.wav'
+
                 self.status.emit("[INFO] 正在进行音频提取...")
-                self.pid = subprocess.Popen(['ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', input_file+'.wav'], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
+                self.pid = subprocess.Popen(['ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
                 self.pid.wait()
                 self.pid.kill()
                 self.pid.terminate()
 
-                if not os.path.exists(input_file+'.wav'):
+                if not os.path.exists(wav_file):
                     self.status.emit("[ERROR] 音频提取失败，请检查文件格式！")
                     break
 
+                input_file = wav_file[:-4]
                 self.status.emit("[INFO] 正在进行语音识别...")
 
                 if whisper_file.startswith('ggml'):
@@ -899,8 +902,11 @@ class MainWorker(QObject):
                 self.pid.kill()
                 self.pid.terminate()
 
+                if os.path.exists(wav_file):
+                    os.remove(wav_file)
+
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file)+'.json')
-                make_prompt(input_file+'.srt', output_file_path)
+                make_prompt(input_file+'.jp.srt', output_file_path)
                 self.status.emit("[INFO] 语音识别完成！")
 
             if translator == '不进行翻译':
@@ -941,7 +947,7 @@ class MainWorker(QObject):
             self.status.emit("[INFO] 正在生成字幕文件...")
             make_srt(output_file_path.replace('gt_input','gt_output'), input_file+'.zh.srt')
             make_lrc(output_file_path.replace('gt_input','gt_output'), input_file+'.lrc')
-            merge_srt_files([input_file+'.srt',input_file+'.zh.srt'], input_file+'.merged.srt')
+            merge_srt_files([input_file+'.jp.srt',input_file+'.zh.srt'], input_file+'.jp_zh.srt')
             self.status.emit("[INFO] 字幕文件生成完成！")
 
             if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
