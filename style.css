@@ -512,3 +512,59 @@ footer a:hover {
     color: var(--primary-color); /* Use primary pink for emphasis */
     margin-top: 2rem;
 }
+
+/* ... existing styles ... */
+
+/* Header Responsive Styles */
+.menu-toggle {
+    display: none; /* Hidden by default on larger screens */
+    background: none;
+    border: none;
+    color: #ffffff;
+    cursor: pointer;
+    padding: 0;
+}
+
+.menu-toggle .material-icons {
+    font-size: 2rem;
+}
+
+/* Media Query for mobile devices */
+@media (max-width: 768px) {
+    header .container {
+        justify-content: space-between;
+    }
+
+    .menu-toggle {
+        display: block; /* Show hamburger menu */
+    }
+
+    nav {
+        display: none; /* Hide nav by default */
+        position: absolute;
+        top: 100px; /* Position below header */
+        left: 0;
+        right: 0;
+        width: 100%;
+        background-color: #2c3e50;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        flex-direction: column;
+        align-items: center;
+        padding: 10px 0;
+    }
+
+    nav.active {
+        display: flex; /* Show nav when active */
+    }
+
+    nav a {
+        padding: 15px 20px;
+        width: 100%;
+        text-align: center;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    nav a:last-child {
+        border-bottom: none;
+    }
+}

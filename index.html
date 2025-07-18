@@ -15,7 +15,10 @@
                 <span class="material-icons Micon">translate</span>
                 <h1>VoiceTransl</h1>
             </div>
-            <nav>
+            <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">
+                <span class="material-icons">menu</span>
+            </button>
+            <nav id="main-nav">
                 <a href="#features">特色</a>
                 <a href="#download">下载</a>
                 <a href="#modes">模式</a>
@@ -42,6 +45,18 @@
                 </div>
                 <div class="hero-image">
                     <img src="title.jpg" alt="VoiceTransl Software Interface">
+                </div>
+            </div>
+        </section>
+
+        <section id="ad" class="section bg-light">
+            <div class="container">
+                <div class="card text-center">
+                    <h2><span class="material-icons">campaign</span> 优云智算Compshare开发者首选</h2>
+                    <p class="intro-message">万卡RTX40系GPU资源+主流模型API服务，秒级响应，按量计费，新客免费用！点击下面图片一键直达！</p>
+                    <a href="https://www.compshare.cn/images/compshareImage-16qc028dgfoh?referral_code=1RFfR2FQ2FyEVRJMyrOn5d&ytag=GPU_YY-GH_simple" target="_blank" rel="noopener noreferrer">
+                        <img src="sponsor.jpg" alt="优云智算Compshare" style="max-width: 50%; height: auto; border-radius: 8px; margin-top: 20px;">
+                    </a>
                 </div>
             </div>
         </section>
@@ -99,6 +114,11 @@
                         <div class="card-icon"><span class="material-icons">summarize</span></div>
                         <h3>字幕总结</h3>
                         <p>可以自定义Prompt进行字幕内容总结。</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon"><span class="material-icons">graphic_eq</span></div>
+                        <h3>UVR人声分离</h3>
+                        <p>支持UVR5模型进行人声和背景音的分离。</p>
                     </div>
                 </div>
             </div>
@@ -210,6 +230,15 @@
     <script>
         // Simple script to set current year in footer
         document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+        // Toggle mobile menu
+        const menuToggle = document.getElementById('menu-toggle');
+        const mainNav = document.getElementById('main-nav');
+        if (menuToggle && mainNav) {
+            menuToggle.addEventListener('click', () => {
+                mainNav.classList.toggle('active');
+            });
+        }
     </script>
 </body>
 </html>
