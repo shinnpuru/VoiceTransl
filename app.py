@@ -595,70 +595,47 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         if files:
             self.input_files_list.setPlainText('\n'.join(files))
 
+    def on_connection_result(self, success, message, status_code):
+        self.test_connection_btn.setEnabled(True)
+        self.test_connection_btn.setText("📶 测试连接")
+
+        msg = QMessageBox(self)
+        if success:
+            msg.setWindowTitle("成功")
+            msg.setText(f"连接成功！\n响应状态码: {status_code}")
+            msg.setIcon(QMessageBox.Information)
+            self.status.emit("[INFO] 连接测试成功！")
+        else:
+            if status_code == 0: # Exception
+                msg.setWindowTitle("错误")
+                msg.setText(f"连接发生错误: {message}")
+                msg.setIcon(QMessageBox.Critical)
+                self.status.emit(f"[ERROR] 连接测试错误: {message}")
+            else:
+                msg.setWindowTitle("失败")
+                msg.setText(f"连接失败。\n状态码: {status_code}\n响应: {message}")
+                msg.setIcon(QMessageBox.Warning)
+                self.status.emit(f"[ERROR] 连接测试失败: {status_code} {message}")
+        msg.exec_()
+
     def test_connection(self):
         translator = self.translator_group.currentText()
-        token = self.gpt_token.text()
-        model = self.gpt_model.text()
-
-        # Helper to show message
-        def show_msg(title, text, icon):
-            msg = QMessageBox(self)
-            msg.setWindowTitle(title)
-            msg.setText(text)
-            msg.setIcon(icon)
-            msg.exec_()
-
         if translator in ['不进行翻译', 'sakura-009', 'sakura-010', 'galtransl']:
-             show_msg("提示", "当前选中的模型不支持在线连接测试。", QMessageBox.Information)
+             msg = QMessageBox(self)
+             msg.setWindowTitle("提示")
+             msg.setText("当前选中的模型不支持在线连接测试。")
+             msg.setIcon(QMessageBox.Information)
+             msg.exec_()
              return
-
-        if translator == 'gpt-custom':
-            base_url = self.gpt_address.text()
-            if not base_url:
-                 show_msg("错误", "请输入自定义API地址。", QMessageBox.Warning)
-                 return
-        else:
-            base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
-            if not base_url:
-                 show_msg("错误", "未知的在线模型。", QMessageBox.Warning)
-                 return
-
-        if not token:
-             # Only warn if it's not a custom (local) endpoint which might not need a token
-             if translator != 'gpt-custom':
-                 show_msg("警告", "Token为空，可能导致连接失败。", QMessageBox.Warning)
 
         self.test_connection_btn.setEnabled(False)
         self.test_connection_btn.setText("正在连接...")
 
         self.thread = QThread()
         self.worker = MainWorker(self)
-
-        # Pass config to worker for thread safety
-        self.worker.test_config = {
-            'translator': translator,
-            'token': token,
-            'model': model,
-            'base_url': base_url
-        }
-
         self.worker.moveToThread(self.thread)
 
-        def on_finished(success, message, status_code):
-            self.test_connection_btn.setEnabled(True)
-            self.test_connection_btn.setText("📶 测试连接")
-            if success:
-                show_msg("成功", f"连接成功！\n响应状态码: {status_code}", QMessageBox.Information)
-                self.status.emit("[INFO] 连接测试成功！")
-            else:
-                if status_code == 0: # Exception
-                        show_msg("错误", f"连接发生错误: {message}", QMessageBox.Critical)
-                        self.status.emit(f"[ERROR] 连接测试错误: {message}")
-                else:
-                        show_msg("失败", f"连接失败。\n状态码: {status_code}\n响应: {message}", QMessageBox.Warning)
-                        self.status.emit(f"[ERROR] 连接测试失败: {status_code} {message}")
-
-        self.worker.connection_tested.connect(on_finished)
+        self.worker.connection_tested.connect(self.on_connection_result)
         self.thread.started.connect(self.worker.test_connection)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
@@ -758,11 +735,14 @@ class MainWorker(QObject):
         self.status = master.status
 
     def test_connection(self):
-        config = getattr(self, 'test_config', {})
-        translator = config.get('translator', '')
-        token = config.get('token', '')
-        model = config.get('model', '')
-        base_url = config.get('base_url', '')
+        translator = self.master.translator_group.currentText()
+        token = self.master.gpt_token.text()
+        model = self.master.gpt_model.text()
+
+        if translator == 'gpt-custom':
+            base_url = self.master.gpt_address.text()
+        else:
+            base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
 
         try:
             # Construct URL using logic from GalTransl/COpenAI.py
