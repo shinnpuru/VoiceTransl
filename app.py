@@ -50,21 +50,6 @@ LOG_PATH = 'log.txt'
 sys.stdout = open(LOG_PATH, 'w', encoding='utf-8')
 sys.stderr = sys.stdout
 
-def get_combo_value(combo):
-    data = combo.itemData(combo.currentIndex())
-    return data if data is not None else combo.currentText()
-
-def set_combo_value(combo, value):
-    index = combo.findData(value)
-    if index != -1:
-        combo.setCurrentIndex(index)
-    else:
-        index = combo.findText(value)
-        if index != -1:
-            combo.setCurrentIndex(index)
-        else:
-             combo.setCurrentText(value)
-
 class Widget(QFrame):
 
     def __init__(self, text: str, parent=None):
@@ -99,6 +84,11 @@ class MainWindow(QMainWindow):
         else:
             self.setWindowTitle(t("VoiceTransl"))
 
+    def get_whisper_models(self):
+        ggml_models = sorted([i for i in os.listdir('whisper') if i.startswith('ggml') and i.endswith('bin') and not 'silero' in i])
+        faster_models = sorted([i for i in os.listdir('whisper-faster') if i.startswith('faster-whisper')])
+        return ggml_models + faster_models + ['不进行听写']
+
     def initUI(self):
         self.initAboutTab()
         self.initInputOutputTab()
@@ -115,6 +105,13 @@ class MainWindow(QMainWindow):
         if os.path.exists('config.txt'):
             with open('config.txt', 'r', encoding='utf-8') as f:
                 lines = f.readlines()
+                # Determine language first
+                if len(lines) >= 15:
+                    app_lang = lines[14].strip()
+                    I18N.set_language(app_lang)
+                    # Refresh UI texts to match loaded language before setting values
+                    self.update_texts()
+
                 if len(lines) >= 14:
                     whisper_file = lines[0].strip()
                     translator = lines[1].strip()
@@ -131,25 +128,20 @@ class MainWindow(QMainWindow):
                     uvr_file = lines[12].strip()
                     output_format = lines[13].strip()
 
-                    if self.whisper_file: set_combo_value(self.whisper_file, whisper_file)
-                    set_combo_value(self.translator_group, translator)
-                    set_combo_value(self.input_lang, language)
+                    if self.whisper_file: self.whisper_file.setCurrentText(whisper_file)
+                    self.translator_group.setCurrentText(translator)
+                    self.input_lang.setCurrentText(language)
                     self.gpt_token.setText(gpt_token)
                     self.gpt_address.setText(gpt_address)
                     self.gpt_model.setText(gpt_model)
-                    if self.sakura_file: set_combo_value(self.sakura_file, sakura_file)
+                    if self.sakura_file: self.sakura_file.setCurrentText(sakura_file)
                     self.sakura_mode.setValue(sakura_mode)
                     self.proxy_address.setText(proxy_address)
                     self.summarize_address.setText(summary_address)
                     self.summarize_model.setText(summary_model)
                     self.summarize_token.setText(summary_token)
-                    if self.uvr_file: set_combo_value(self.uvr_file, uvr_file)
-                    set_combo_value(self.output_format, output_format)
-
-                if len(lines) >= 15:
-                    app_lang = lines[14].strip()
-                    I18N.set_language(app_lang)
-                    self.update_texts()
+                    if self.uvr_file: self.uvr_file.setCurrentText(uvr_file)
+                    self.output_format.setCurrentText(output_format)
 
         if os.path.exists('whisper/param.txt'):
             with open('whisper/param.txt', 'r', encoding='utf-8') as f:
@@ -182,13 +174,6 @@ class MainWindow(QMainWindow):
     def initLanguageSwitch(self):
         # We use a custom widget or reuse navigation avatar widget as a button
         self.language_btn = NavigationAvatarWidget(t("lang_name"), 'icon.png')
-        # We need to disconnect the default clicked behavior if any, but NavigationAvatarWidget usually expects usage.
-        # Actually, let's just use a regular item or hack the widget.
-        # NavigationAvatarWidget(name, avatarPath)
-        # It displays name and avatar.
-
-        # We can also add a custom widget.
-        # Let's add a button to the bottom.
         self.navigationInterface.addWidget(
             routeKey='language_switch',
             widget=self.language_btn,
@@ -239,12 +224,15 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.label_output_desc.setText(t("🎥 选择输出的字幕格式。"))
 
         # Refresh Output Format Combo
-        current_format = get_combo_value(self.output_format)
+        current_format_idx = self.output_format.currentIndex()
         self.output_format.clear()
         formats = ['原文SRT', '原文LRC', '中文LRC', '双语LRC', '中文SRT', '双语SRT']
         for fmt in formats:
-            self.output_format.addItem(t(fmt), fmt)
-        set_combo_value(self.output_format, current_format)
+            self.output_format.addItem(t(fmt))
+        if current_format_idx >= 0:
+            self.output_format.setCurrentIndex(current_format_idx)
+        else:
+            self.output_format.setCurrentText(t('中文SRT'))
 
         self.run_button.setText(t("🚀 运行"))
         self.output_text_edit.setPlaceholderText(t("当前无输出信息..."))
@@ -258,19 +246,14 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.label_whisper_desc.setText(t("🗣️ 选择用于语音识别的模型文件。"))
 
         # Refresh Whisper Combo
-        current_whisper = get_combo_value(self.whisper_file)
+        current_whisper_idx = self.whisper_file.currentIndex()
         self.whisper_file.clear()
-        whisper_lst = [i for i in os.listdir('whisper') if i.startswith('ggml') and i.endswith('bin') and not 'silero' in i] + [i for i in os.listdir('whisper-faster') if i.startswith('faster-whisper')] + ['不进行听写']
-        for i in whisper_lst:
-            if i == '不进行听写':
-                self.whisper_file.addItem(t(i), i)
-            else:
-                self.whisper_file.addItem(i)
-        set_combo_value(self.whisper_file, current_whisper)
+        for i in self.get_whisper_models():
+            self.whisper_file.addItem(t(i))
+        if current_whisper_idx >= 0:
+            self.whisper_file.setCurrentIndex(current_whisper_idx)
 
         self.label_lang_desc.setText(t("🌍 选择输入的语言。(ja=日语，en=英语，ko=韩语，ru=俄语，fr=法语，zh=中文，仅听写）"))
-        # Refresh Lang Combo
-        # Items are codes, no change needed in combo, but label changed.
 
         self.open_whisper_dir.setText(t("📁 打开Whisper目录"))
         self.open_faster_dir.setText(t("📁 打开Faster Whisper目录"))
@@ -283,14 +266,12 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.label_trans_desc.setText(t("🚀 选择用于翻译的模型类别。"))
 
         # Refresh Translator Group
-        current_trans = get_combo_value(self.translator_group)
+        current_trans_idx = self.translator_group.currentIndex()
         self.translator_group.clear()
         for i in TRANSLATOR_SUPPORTED:
-            if i == '不进行翻译':
-                self.translator_group.addItem(t(i), i)
-            else:
-                self.translator_group.addItem(i)
-        set_combo_value(self.translator_group, current_trans)
+            self.translator_group.addItem(t(i))
+        if current_trans_idx >= 0:
+            self.translator_group.setCurrentIndex(current_trans_idx)
 
         self.label_gpt_token.setText(t("🚀 在线模型令牌"))
         self.gpt_token.setPlaceholderText(t("留空为使用上次配置的Token。"))
@@ -301,6 +282,15 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.test_connection_btn.setText(t("📶 测试连接"))
         self.label_offline_model.setText(t("💻 离线模型文件（galtransl， sakura，llamacpp）"))
         self.label_offline_params.setText(t("💻 离线模型参数（galtransl， sakura，llamacpp）"))
+
+        # Refresh Sakura File Combo
+        current_sakura_idx = self.sakura_file.currentIndex()
+        self.sakura_file.clear()
+        sakura_lst = sorted([i for i in os.listdir('llama') if i.endswith('gguf')])
+        self.sakura_file.addItems(sakura_lst)
+        if current_sakura_idx >= 0:
+            self.sakura_file.setCurrentIndex(current_sakura_idx)
+
         self.open_model_dir.setText(t("📁 打开离线模型目录"))
         self.label_llama_param.setText(t("🔧 输入Llama.cpp命令行参数。"))
         self.param_llama.setPlaceholderText(t("每个参数空格隔开，请参考Llama.cpp文档，不清楚请保持默认。"))
@@ -330,6 +320,15 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         # Synth Tab
         self.label_vocal_sep.setText(t("🎤 人声分离工具"))
         self.label_vocal_model_desc.setText(t("选择用于伴奏分离的模型文件。"))
+
+        # Refresh UVR Combo
+        current_uvr_idx = self.uvr_file.currentIndex()
+        self.uvr_file.clear()
+        uvr_lst = sorted([i for i in os.listdir('uvr') if i.endswith('onnx')])
+        self.uvr_file.addItems(uvr_lst)
+        if current_uvr_idx >= 0:
+            self.uvr_file.setCurrentIndex(current_uvr_idx)
+
         self.open_uvr_dir.setText(t("📁 打开UVR模型目录"))
         self.uvr_file_list.setPlaceholderText(t("拖拽音频文件到方框内，点击运行即可。输出文件为原文件名_vocal.wav和_no_vocal.wav。"))
         self.run_uvr_button.setText(t("🚀 人声分离"))
@@ -554,8 +553,8 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.output_format = QComboBox()
         formats = ['原文SRT', '原文LRC', '中文LRC', '双语LRC', '中文SRT', '双语SRT']
         for fmt in formats:
-            self.output_format.addItem(t(fmt), fmt)
-        set_combo_value(self.output_format, '中文SRT')
+            self.output_format.addItem(t(fmt))
+        self.output_format.setCurrentText(t('中文SRT'))
         self.input_output_layout.addWidget(self.output_format)
 
         self.run_button = QPushButton(t("🚀 运行"))
@@ -616,12 +615,8 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.label_whisper_desc = BodyLabel(t("🗣️ 选择用于语音识别的模型文件。"))
         self.settings_layout.addWidget(self.label_whisper_desc)
         self.whisper_file = QComboBox()
-        whisper_lst = [i for i in os.listdir('whisper') if i.startswith('ggml') and i.endswith('bin') and not 'silero' in i] + [i for i in os.listdir('whisper-faster') if i.startswith('faster-whisper')] + ['不进行听写']
-        for i in whisper_lst:
-            if i == '不进行听写':
-                self.whisper_file.addItem(t(i), i)
-            else:
-                self.whisper_file.addItem(i)
+        for i in self.get_whisper_models():
+            self.whisper_file.addItem(t(i))
         self.settings_layout.addWidget(self.whisper_file)
 
         self.label_lang_desc = BodyLabel(t("🌍 选择输入的语言。(ja=日语，en=英语，ko=韩语，ru=俄语，fr=法语，zh=中文，仅听写）"))
@@ -660,10 +655,7 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.advanced_settings_layout.addWidget(self.label_trans_desc)
         self.translator_group = QComboBox()
         for i in TRANSLATOR_SUPPORTED:
-            if i == '不进行翻译':
-                self.translator_group.addItem(t(i), i)
-            else:
-                self.translator_group.addItem(i)
+            self.translator_group.addItem(t(i))
         self.advanced_settings_layout.addWidget(self.translator_group)
         
         self.label_gpt_token = BodyLabel(t("🚀 在线模型令牌"))
@@ -691,7 +683,7 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.label_offline_model = BodyLabel(t("💻 离线模型文件（galtransl， sakura，llamacpp）"))
         self.advanced_settings_layout.addWidget(self.label_offline_model)
         self.sakura_file = QComboBox()
-        sakura_lst = [i for i in os.listdir('llama') if i.endswith('gguf')]
+        sakura_lst = sorted([i for i in os.listdir('llama') if i.endswith('gguf')])
         self.sakura_file.addItems(sakura_lst)
         self.advanced_settings_layout.addWidget(self.sakura_file)
         
@@ -784,7 +776,7 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.label_vocal_model_desc = BodyLabel(t("选择用于伴奏分离的模型文件。"))
         self.synth_layout.addWidget(self.label_vocal_model_desc)
         self.uvr_file = QComboBox()
-        uvr_lst = [i for i in os.listdir('uvr') if i.endswith('onnx')]
+        uvr_lst = sorted([i for i in os.listdir('uvr') if i.endswith('onnx')])
         self.uvr_file.addItems(uvr_lst)
         self.synth_layout.addWidget(self.uvr_file)
         self.open_uvr_dir = QPushButton(t("📁 打开UVR模型目录"))
@@ -899,8 +891,8 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         msg.exec_()
 
     def test_connection(self):
-        translator = get_combo_value(self.translator_group)
-        if translator in ['不进行翻译', 'sakura-009', 'sakura-010', 'galtransl']:
+        translator = self.translator_group.currentText()
+        if translator in [t('不进行翻译'), 'sakura-009', 'sakura-010', 'galtransl']:
              msg = QMessageBox(self)
              msg.setWindowTitle(t("提示"))
              msg.setText(t("当前选中的模型不支持在线连接测试。"))
@@ -1015,7 +1007,7 @@ class MainWorker(QObject):
         self.status = master.status
 
     def test_connection(self):
-        translator = get_combo_value(self.master.translator_group)
+        translator = self.master.translator_group.currentText()
         token = self.master.gpt_token.text()
         model = self.master.gpt_model.text()
 
@@ -1055,20 +1047,20 @@ class MainWorker(QObject):
     @error_handler
     def save_config(self):
         self.status.emit(t("[INFO] 正在读取配置..."))
-        whisper_file = get_combo_value(self.master.whisper_file)
-        translator = get_combo_value(self.master.translator_group)
-        language = get_combo_value(self.master.input_lang)
+        whisper_file = self.master.whisper_file.currentText()
+        translator = self.master.translator_group.currentText()
+        language = self.master.input_lang.currentText()
         gpt_token = self.master.gpt_token.text()
         gpt_address = self.master.gpt_address.text()
         gpt_model = self.master.gpt_model.text()
-        sakura_file = get_combo_value(self.master.sakura_file)
+        sakura_file = self.master.sakura_file.currentText()
         sakura_mode = self.master.sakura_mode.value()
         proxy_address = self.master.proxy_address.text()
         summary_address = self.master.summarize_address.text()
         summary_model = self.master.summarize_model.text()
         summary_token = self.master.summarize_token.text()
-        uvr_file = get_combo_value(self.master.uvr_file)
-        output_format = get_combo_value(self.master.output_format)
+        uvr_file = self.master.uvr_file.currentText()
+        output_format = self.master.output_format.currentText()
         app_lang = I18N.current_lang
 
         # save config
@@ -1100,7 +1092,7 @@ class MainWorker(QObject):
     @error_handler
     def vocal_split(self):
         self.save_config()
-        uvr_file = get_combo_value(self.master.uvr_file)
+        uvr_file = self.master.uvr_file.currentText()
         if not uvr_file.endswith('.onnx'):
             self.status.emit(t("[ERROR] 请选择正确的UVR模型文件！"))
             self.finished.emit()
@@ -1280,16 +1272,26 @@ class MainWorker(QObject):
 
     @error_handler
     def run(self):
+        # Capture current translated strings for logic checks to avoid race conditions
+        TEXT_NO_DICTATION = t('不进行听写')
+        TEXT_NO_TRANS = t('不进行翻译')
+        TEXT_ORIG_SRT = t('原文SRT')
+        TEXT_ORIG_LRC = t('原文LRC')
+        TEXT_ZH_LRC = t('中文LRC')
+        TEXT_BI_LRC = t('双语LRC')
+        TEXT_ZH_SRT = t('中文SRT')
+        TEXT_BI_SRT = t('双语SRT')
+
         self.save_config()
         input_files = self.master.input_files_list.toPlainText()
         yt_url = self.master.yt_url.toPlainText()
-        whisper_file = get_combo_value(self.master.whisper_file)
-        translator = get_combo_value(self.master.translator_group)
-        language = get_combo_value(self.master.input_lang)
+        whisper_file = self.master.whisper_file.currentText()
+        translator = self.master.translator_group.currentText()
+        language = self.master.input_lang.currentText()
         gpt_token = self.master.gpt_token.text()
         gpt_address = self.master.gpt_address.text()
         gpt_model = self.master.gpt_model.text()
-        sakura_file = get_combo_value(self.master.sakura_file)
+        sakura_file = self.master.sakura_file.currentText()
         sakura_mode = self.master.sakura_mode.value()
         proxy_address = self.master.proxy_address.text()
         before_dict = self.master.before_dict.toPlainText()
@@ -1299,7 +1301,7 @@ class MainWorker(QObject):
         param_whisper = self.master.param_whisper.toPlainText()
         param_whisper_faster = self.master.param_whisper_faster.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
-        output_format = get_combo_value(self.master.output_format)
+        output_format = self.master.output_format.currentText()
 
         if not gpt_token:
             gpt_token = 'sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
@@ -1429,7 +1431,7 @@ class MainWorker(QObject):
                 self.status.emit(t("[INFO] 字幕转换完成！"))
                 input_file = input_file[:-4]
             else:
-                if whisper_file == '不进行听写':
+                if whisper_file == TEXT_NO_DICTATION:
                     self.status.emit(t("[INFO] 不进行听写，跳过听写步骤..."))
                     continue
 
@@ -1463,12 +1465,12 @@ class MainWorker(QObject):
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file)+'.json')
                 make_prompt(wav_file[:-4]+'.srt', output_file_path)
 
-                if output_format == '原文SRT' or output_format == '双语SRT':
+                if output_format == TEXT_ORIG_SRT or output_format == TEXT_BI_SRT:
                     make_srt(output_file_path, input_file+'.srt')
 
-                if output_format == '原文LRC' or output_format == '双语LRC':
+                if output_format == TEXT_ORIG_LRC or output_format == TEXT_BI_LRC:
                     lrc_path = input_file + '.lrc'
-                    if output_format == '双语LRC':
+                    if output_format == TEXT_BI_LRC:
                         lrc_path = input_file + '.orig.lrc'
                     make_lrc(output_file_path, lrc_path)
 
@@ -1479,7 +1481,7 @@ class MainWorker(QObject):
                     os.remove(wav_file[:-4]+'.srt')
                 self.status.emit(t("[INFO] 语音识别完成！"))
 
-            if translator == '不进行翻译':
+            if translator == TEXT_NO_TRANS:
                 self.status.emit(t("[INFO] 翻译器未选择，跳过翻译步骤..."))
                 continue
 
@@ -1517,19 +1519,19 @@ class MainWorker(QObject):
             worker('project', 'config.yaml', worker_trans, show_banner=False)
 
             self.status.emit(t("[INFO] 正在生成字幕文件..."))
-            if output_format == '中文SRT' or output_format == '双语SRT':
+            if output_format == TEXT_ZH_SRT or output_format == TEXT_BI_SRT:
                 make_srt(output_file_path.replace('gt_input','gt_output'), input_file+'.zh.srt')
 
-            if output_format == '中文LRC' or output_format == '双语LRC':
+            if output_format == TEXT_ZH_LRC or output_format == TEXT_BI_LRC:
                 lrc_path = input_file + '.lrc'
-                if output_format == '双语LRC':
+                if output_format == TEXT_BI_LRC:
                     lrc_path = input_file + '.zh.lrc'
                 make_lrc(output_file_path.replace('gt_input','gt_output'), lrc_path)
 
-            if output_format == '双语SRT':
+            if output_format == TEXT_BI_SRT:
                 merge_srt_files([input_file+'.srt',input_file+'.zh.srt'], input_file+'.combine.srt')
 
-            if output_format == '双语LRC':
+            if output_format == TEXT_BI_LRC:
                 merge_lrc_files([input_file+'.orig.lrc', input_file+'.zh.lrc'], input_file+'.combine.lrc')
 
             self.status.emit(t("[INFO] 字幕文件生成完成！"))

@@ -2,6 +2,15 @@
 TRANSLATIONS = {
     'CN': {
         "lang_name": "简体中文",
+        # Explicit mappings for logic keys (optional but good for consistency)
+        '不进行听写': '不进行听写',
+        '不进行翻译': '不进行翻译',
+        '原文SRT': '原文SRT',
+        '原文LRC': '原文LRC',
+        '中文LRC': '中文LRC',
+        '双语LRC': '双语LRC',
+        '中文SRT': '中文SRT',
+        '双语SRT': '双语SRT',
     },
     'EN': {
         "lang_name": "English",
