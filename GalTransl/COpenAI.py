@@ -38,6 +38,18 @@ class COpenAIToken:
         """
         return self.token[:6] + "*" * 17
 
+def get_api_address(domain: str) -> str:
+    api_address = domain + "/v1/chat/completions"
+    if 'bigmodel' in api_address:
+        api_address = api_address.replace('v1', 'v4')
+    if 'minimax' in api_address:
+        api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
+    if 'ark.cn' in api_address:
+        api_address = api_address.replace('v1', 'v3')
+    if 'google' in api_address:
+        api_address = api_address.replace('v1', 'v1beta/openai')
+    return api_address
+
 
 def initGPTToken(config: CProjectConfig, eng_type: str) -> Optional[list[COpenAIToken]]:
     """
@@ -114,15 +126,7 @@ class COpenAITokenPool:
                 if self.force_eng_name:
                     model_name = self.force_eng_name
                 # test if have balance
-                api_address = token.domain + "/v1/chat/completions"
-                if 'bigmodel' in api_address:
-                    api_address = api_address.replace('v1', 'v4')
-                if 'minimax' in api_address:
-                    api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
-                if 'ark.cn' in api_address:
-                    api_address = api_address.replace('v1', 'v3')
-                if 'google' in api_address:
-                    api_address = api_address.replace('v1', 'v1beta/openai')
+                api_address = get_api_address(token.domain)
                 chatResponse = await client.post(
                     api_address,
                     headers=auth,

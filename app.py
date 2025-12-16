@@ -4,7 +4,7 @@ os.chdir(sys._MEIPASS)
 import shutil
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal, QTimer, QDateTime, QSize
-from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame, QMessageBox
 from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, LineEdit as QLineEdit, ComboBox as QComboBox, Slider as QSlider, FluentWindow as QMainWindow, PlainTextEdit as QPlainTextEdit, SplashScreen
 from qfluentwidgets import FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel
 
@@ -22,6 +22,7 @@ from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from prompt2srt import make_srt, make_lrc, merge_lrc_files
 from srt2prompt import make_prompt, merge_srt_files
 from GalTransl.__main__ import worker
+from GalTransl.COpenAI import get_api_address
 
 ONLINE_TRANSLATOR_MAPPING = {
     'moonshot': 'https://api.moonshot.cn',
@@ -416,6 +417,10 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.gpt_address = QLineEdit()
         self.gpt_address.setPlaceholderText("例如：http://127.0.0.1:11434")
         self.advanced_settings_layout.addWidget(self.gpt_address)
+
+        self.test_connection_btn = QPushButton("📶 测试连接")
+        self.test_connection_btn.clicked.connect(self.test_connection)
+        self.advanced_settings_layout.addWidget(self.test_connection_btn)
         
         self.advanced_settings_layout.addWidget(BodyLabel("💻 离线模型文件（galtransl， sakura，llamacpp）"))
         self.sakura_file = QComboBox()
@@ -590,6 +595,51 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         if files:
             self.input_files_list.setPlainText('\n'.join(files))
 
+    def on_connection_result(self, success, message, status_code):
+        self.test_connection_btn.setEnabled(True)
+        self.test_connection_btn.setText("📶 测试连接")
+
+        msg = QMessageBox(self)
+        if success:
+            msg.setWindowTitle("成功")
+            msg.setText(f"连接成功！\n响应状态码: {status_code}")
+            msg.setIcon(QMessageBox.Information)
+            self.status.emit("[INFO] 连接测试成功！")
+        else:
+            if status_code == 0: # Exception
+                msg.setWindowTitle("错误")
+                msg.setText(f"连接发生错误: {message}")
+                msg.setIcon(QMessageBox.Critical)
+                self.status.emit(f"[ERROR] 连接测试错误: {message}")
+            else:
+                msg.setWindowTitle("失败")
+                msg.setText(f"连接失败。\n状态码: {status_code}\n响应: {message}")
+                msg.setIcon(QMessageBox.Warning)
+                self.status.emit(f"[ERROR] 连接测试失败: {status_code} {message}")
+        msg.exec_()
+
+    def test_connection(self):
+        translator = self.translator_group.currentText()
+        if translator in ['不进行翻译', 'sakura-009', 'sakura-010', 'galtransl']:
+             msg = QMessageBox(self)
+             msg.setWindowTitle("提示")
+             msg.setText("当前选中的模型不支持在线连接测试。")
+             msg.setIcon(QMessageBox.Information)
+             msg.exec_()
+             return
+
+        self.test_connection_btn.setEnabled(False)
+        self.test_connection_btn.setText("正在连接...")
+
+        self.thread = QThread()
+        self.worker = MainWorker(self)
+        self.worker.moveToThread(self.thread)
+
+        self.worker.connection_tested.connect(self.on_connection_result)
+        self.thread.started.connect(self.worker.test_connection)
+        self.worker.finished.connect(self.thread.quit)
+        self.thread.start()
+
     def run_worker(self):
         self.thread = QThread()
         self.worker = MainWorker(self)
@@ -677,11 +727,50 @@ def error_handler(func):
     return wrapper
 class MainWorker(QObject):
     finished = pyqtSignal()
+    connection_tested = pyqtSignal(bool, str, int)
 
     def __init__(self, master):
         super().__init__()
         self.master = master
         self.status = master.status
+
+    def test_connection(self):
+        translator = self.master.translator_group.currentText()
+        token = self.master.gpt_token.text()
+        model = self.master.gpt_model.text()
+
+        if translator == 'gpt-custom':
+            base_url = self.master.gpt_address.text()
+        else:
+            base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
+
+        try:
+            # Construct URL using logic from GalTransl/COpenAI.py
+            api_address = get_api_address(base_url.rstrip('/'))
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            # Simple test message
+            data = {
+                "model": model if model else "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 5
+            }
+
+            self.status.emit(f"[INFO] 正在测试连接... URL: {api_address}")
+            response = requests.post(api_address, headers=headers, json=data, timeout=15)
+
+            if response.status_code == 200:
+                self.connection_tested.emit(True, response.text, response.status_code)
+            else:
+                self.connection_tested.emit(False, response.text, response.status_code)
+        except Exception as e:
+            self.connection_tested.emit(False, str(e), 0)
+        finally:
+            self.finished.emit()
 
     @error_handler
     def save_config(self):
