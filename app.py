@@ -4,7 +4,7 @@ os.chdir(sys._MEIPASS)
 import shutil
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal, QTimer, QDateTime, QSize
-from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame, QMessageBox
 from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, LineEdit as QLineEdit, ComboBox as QComboBox, Slider as QSlider, FluentWindow as QMainWindow, PlainTextEdit as QPlainTextEdit, SplashScreen
 from qfluentwidgets import FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel
 
@@ -57,6 +57,25 @@ class Widget(QFrame):
 
         # Must set a globally unique object name for the sub-interface
         self.setObjectName(text.replace(' ', '-'))
+
+class ConnectionTestWorker(QThread):
+    finished = pyqtSignal(bool, str, int)  # success, message, status_code
+
+    def __init__(self, api_address, headers, data):
+        super().__init__()
+        self.api_address = api_address
+        self.headers = headers
+        self.data = data
+
+    def run(self):
+        try:
+            response = requests.post(self.api_address, headers=self.headers, json=self.data, timeout=15)
+            if response.status_code == 200:
+                self.finished.emit(True, response.text, response.status_code)
+            else:
+                self.finished.emit(False, response.text, response.status_code)
+        except Exception as e:
+            self.finished.emit(False, str(e), 0)
 
 class MainWindow(QMainWindow):
     status = pyqtSignal(str)
@@ -416,6 +435,10 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         self.gpt_address = QLineEdit()
         self.gpt_address.setPlaceholderText("例如：http://127.0.0.1:11434")
         self.advanced_settings_layout.addWidget(self.gpt_address)
+
+        self.test_connection_btn = QPushButton("📶 测试连接")
+        self.test_connection_btn.clicked.connect(self.test_connection)
+        self.advanced_settings_layout.addWidget(self.test_connection_btn)
         
         self.advanced_settings_layout.addWidget(BodyLabel("💻 离线模型文件（galtransl， sakura，llamacpp）"))
         self.sakura_file = QComboBox()
@@ -589,6 +612,92 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         files, _ = QFileDialog.getOpenFileNames(self, "选择音视频文件/SRT文件", "", "All Files (*);;Video Files (*.mp4 *.webm, *.flv);;SRT Files (*.srt);;Audio Files (*.wav, *.mp3, *.flac)", options=options)
         if files:
             self.input_files_list.setPlainText('\n'.join(files))
+
+    def test_connection(self):
+        translator = self.translator_group.currentText()
+        token = self.gpt_token.text()
+        model = self.gpt_model.text()
+
+        # Helper to show message
+        def show_msg(title, text, icon):
+            msg = QMessageBox(self)
+            msg.setWindowTitle(title)
+            msg.setText(text)
+            msg.setIcon(icon)
+            msg.exec_()
+
+        if translator in ['不进行翻译', 'sakura-009', 'sakura-010', 'galtransl']:
+             show_msg("提示", "当前选中的模型不支持在线连接测试。", QMessageBox.Information)
+             return
+
+        if translator == 'gpt-custom':
+            base_url = self.gpt_address.text()
+            if not base_url:
+                 show_msg("错误", "请输入自定义API地址。", QMessageBox.Warning)
+                 return
+        else:
+            base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
+            if not base_url:
+                 show_msg("错误", "未知的在线模型。", QMessageBox.Warning)
+                 return
+
+        if not token:
+             # Only warn if it's not a custom (local) endpoint which might not need a token
+             if translator != 'gpt-custom':
+                 show_msg("警告", "Token为空，可能导致连接失败。", QMessageBox.Warning)
+
+        try:
+            # Construct URL based on logic in GalTransl/COpenAI.py
+            api_address = base_url.rstrip('/') + "/v1/chat/completions"
+            if 'bigmodel' in api_address:
+                api_address = api_address.replace('v1', 'v4')
+            if 'minimax' in api_address:
+                api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
+            if 'ark.cn' in api_address:
+                api_address = api_address.replace('v1', 'v3')
+            if 'google' in api_address:
+                api_address = api_address.replace('v1', 'v1beta/openai')
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            # Simple test message
+            data = {
+                "model": model if model else "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 5
+            }
+
+            self.status.emit(f"[INFO] 正在测试连接... URL: {api_address}")
+            self.test_connection_btn.setEnabled(False)
+            self.test_connection_btn.setText("正在连接...")
+
+            self.connection_worker = ConnectionTestWorker(api_address, headers, data)
+
+            def on_finished(success, message, status_code):
+                self.test_connection_btn.setEnabled(True)
+                self.test_connection_btn.setText("📶 测试连接")
+                if success:
+                    show_msg("成功", f"连接成功！\n响应状态码: {status_code}", QMessageBox.Information)
+                    self.status.emit("[INFO] 连接测试成功！")
+                else:
+                    if status_code == 0: # Exception
+                         show_msg("错误", f"连接发生错误: {message}", QMessageBox.Critical)
+                         self.status.emit(f"[ERROR] 连接测试错误: {message}")
+                    else:
+                         show_msg("失败", f"连接失败。\n状态码: {status_code}\n响应: {message}", QMessageBox.Warning)
+                         self.status.emit(f"[ERROR] 连接测试失败: {status_code} {message}")
+
+            self.connection_worker.finished.connect(on_finished)
+            self.connection_worker.start()
+
+        except Exception as e:
+            self.test_connection_btn.setEnabled(True)
+            self.test_connection_btn.setText("📶 测试连接")
+            show_msg("错误", f"发生错误: {str(e)}", QMessageBox.Critical)
+            self.status.emit(f"[ERROR] 连接测试错误: {str(e)}")
 
     def run_worker(self):
         self.thread = QThread()
