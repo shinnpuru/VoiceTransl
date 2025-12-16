@@ -59,25 +59,6 @@ class Widget(QFrame):
         # Must set a globally unique object name for the sub-interface
         self.setObjectName(text.replace(' ', '-'))
 
-class ConnectionTestWorker(QThread):
-    finished = pyqtSignal(bool, str, int)  # success, message, status_code
-
-    def __init__(self, api_address, headers, data):
-        super().__init__()
-        self.api_address = api_address
-        self.headers = headers
-        self.data = data
-
-    def run(self):
-        try:
-            response = requests.post(self.api_address, headers=self.headers, json=self.data, timeout=15)
-            if response.status_code == 200:
-                self.finished.emit(True, response.text, response.status_code)
-            else:
-                self.finished.emit(False, response.text, response.status_code)
-        except Exception as e:
-            self.finished.emit(False, str(e), 0)
-
 class MainWindow(QMainWindow):
     status = pyqtSignal(str)
 
@@ -647,50 +628,40 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
              if translator != 'gpt-custom':
                  show_msg("警告", "Token为空，可能导致连接失败。", QMessageBox.Warning)
 
-        try:
-            # Construct URL using logic from GalTransl/COpenAI.py
-            api_address = get_api_address(base_url.rstrip('/'))
+        self.test_connection_btn.setEnabled(False)
+        self.test_connection_btn.setText("正在连接...")
 
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
+        self.thread = QThread()
+        self.worker = MainWorker(self)
 
-            # Simple test message
-            data = {
-                "model": model if model else "gpt-3.5-turbo",
-                "messages": [{"role": "user", "content": "Hi"}],
-                "max_tokens": 5
-            }
+        # Pass config to worker for thread safety
+        self.worker.test_config = {
+            'translator': translator,
+            'token': token,
+            'model': model,
+            'base_url': base_url
+        }
 
-            self.status.emit(f"[INFO] 正在测试连接... URL: {api_address}")
-            self.test_connection_btn.setEnabled(False)
-            self.test_connection_btn.setText("正在连接...")
+        self.worker.moveToThread(self.thread)
 
-            self.connection_worker = ConnectionTestWorker(api_address, headers, data)
-
-            def on_finished(success, message, status_code):
-                self.test_connection_btn.setEnabled(True)
-                self.test_connection_btn.setText("📶 测试连接")
-                if success:
-                    show_msg("成功", f"连接成功！\n响应状态码: {status_code}", QMessageBox.Information)
-                    self.status.emit("[INFO] 连接测试成功！")
-                else:
-                    if status_code == 0: # Exception
-                         show_msg("错误", f"连接发生错误: {message}", QMessageBox.Critical)
-                         self.status.emit(f"[ERROR] 连接测试错误: {message}")
-                    else:
-                         show_msg("失败", f"连接失败。\n状态码: {status_code}\n响应: {message}", QMessageBox.Warning)
-                         self.status.emit(f"[ERROR] 连接测试失败: {status_code} {message}")
-
-            self.connection_worker.finished.connect(on_finished)
-            self.connection_worker.start()
-
-        except Exception as e:
+        def on_finished(success, message, status_code):
             self.test_connection_btn.setEnabled(True)
             self.test_connection_btn.setText("📶 测试连接")
-            show_msg("错误", f"发生错误: {str(e)}", QMessageBox.Critical)
-            self.status.emit(f"[ERROR] 连接测试错误: {str(e)}")
+            if success:
+                show_msg("成功", f"连接成功！\n响应状态码: {status_code}", QMessageBox.Information)
+                self.status.emit("[INFO] 连接测试成功！")
+            else:
+                if status_code == 0: # Exception
+                        show_msg("错误", f"连接发生错误: {message}", QMessageBox.Critical)
+                        self.status.emit(f"[ERROR] 连接测试错误: {message}")
+                else:
+                        show_msg("失败", f"连接失败。\n状态码: {status_code}\n响应: {message}", QMessageBox.Warning)
+                        self.status.emit(f"[ERROR] 连接测试失败: {status_code} {message}")
+
+        self.worker.connection_tested.connect(on_finished)
+        self.thread.started.connect(self.worker.test_connection)
+        self.worker.finished.connect(self.thread.quit)
+        self.thread.start()
 
     def run_worker(self):
         self.thread = QThread()
@@ -779,11 +750,47 @@ def error_handler(func):
     return wrapper
 class MainWorker(QObject):
     finished = pyqtSignal()
+    connection_tested = pyqtSignal(bool, str, int)
 
     def __init__(self, master):
         super().__init__()
         self.master = master
         self.status = master.status
+
+    def test_connection(self):
+        config = getattr(self, 'test_config', {})
+        translator = config.get('translator', '')
+        token = config.get('token', '')
+        model = config.get('model', '')
+        base_url = config.get('base_url', '')
+
+        try:
+            # Construct URL using logic from GalTransl/COpenAI.py
+            api_address = get_api_address(base_url.rstrip('/'))
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+
+            # Simple test message
+            data = {
+                "model": model if model else "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 5
+            }
+
+            self.status.emit(f"[INFO] 正在测试连接... URL: {api_address}")
+            response = requests.post(api_address, headers=headers, json=data, timeout=15)
+
+            if response.status_code == 200:
+                self.connection_tested.emit(True, response.text, response.status_code)
+            else:
+                self.connection_tested.emit(False, response.text, response.status_code)
+        except Exception as e:
+            self.connection_tested.emit(False, str(e), 0)
+        finally:
+            self.finished.emit()
 
     @error_handler
     def save_config(self):
