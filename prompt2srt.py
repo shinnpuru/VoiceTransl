@@ -32,6 +32,18 @@ def make_lrc(input_file, output_file):
     with open(output_file, 'w', encoding="utf-8") as f:
         for i, d in enumerate(data):
             print("["+format_result_lrc(d["start"])+"] "+d["message"], file=f)
+
+def merge_lrc_files(input_files, output_file):
+    lines = []
+    for input_file in input_files:
+        with open(input_file, encoding='utf-8') as f:
+            lines.extend(f.readlines())
+
+    # Sort lines by timestamp (string sort works for [mm:ss.xx])
+    lines.sort()
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
         
 
 if __name__ == "__main__":
