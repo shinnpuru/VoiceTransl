@@ -22,6 +22,7 @@ from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from prompt2srt import make_srt, make_lrc, merge_lrc_files
 from srt2prompt import make_prompt, merge_srt_files
 from GalTransl.__main__ import worker
+from GalTransl.COpenAI import get_api_address
 
 ONLINE_TRANSLATOR_MAPPING = {
     'moonshot': 'https://api.moonshot.cn',
@@ -647,16 +648,8 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
                  show_msg("警告", "Token为空，可能导致连接失败。", QMessageBox.Warning)
 
         try:
-            # Construct URL based on logic in GalTransl/COpenAI.py
-            api_address = base_url.rstrip('/') + "/v1/chat/completions"
-            if 'bigmodel' in api_address:
-                api_address = api_address.replace('v1', 'v4')
-            if 'minimax' in api_address:
-                api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
-            if 'ark.cn' in api_address:
-                api_address = api_address.replace('v1', 'v3')
-            if 'google' in api_address:
-                api_address = api_address.replace('v1', 'v1beta/openai')
+            # Construct URL using logic from GalTransl/COpenAI.py
+            api_address = get_api_address(base_url.rstrip('/'))
 
             headers = {
                 "Authorization": f"Bearer {token}",
