@@ -307,7 +307,7 @@ B站教程：https://space.bilibili.com/36464441/lists/3239068。
         # Format Section
         self.input_output_layout.addWidget(BodyLabel("🎥 选择输出的字幕格式。"))
         self.output_format = QComboBox()
-        self.output_format.addItems(['原文SRT', '中文LRC', '中文SRT', '双语SRT'])
+        self.output_format.addItems(['原文SRT', '原文LRC', '中文LRC', '中文SRT', '双语SRT'])
         self.output_format.setCurrentText('中文SRT')
         self.input_output_layout.addWidget(self.output_format)
 
@@ -1095,6 +1095,9 @@ class MainWorker(QObject):
 
                 if output_format == '原文SRT' or output_format == '双语SRT':
                     make_srt(output_file_path, input_file+'.srt')
+
+                if output_format == '原文LRC':
+                    make_lrc(output_file_path, input_file+'.lrc')
 
                 if os.path.exists(wav_file):
                     os.remove(wav_file)
