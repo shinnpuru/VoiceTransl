@@ -21,7 +21,7 @@ from bilibili_dl.bilibili_dl.utils import send_request
 from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from pathlib import Path
 
-from prompt2srt import make_srt, make_lrc
+from prompt2srt import make_srt, make_lrc, merge_lrc_files
 from srt2prompt import make_prompt, merge_srt_files
 from GalTransl.__main__ import worker
 
@@ -391,7 +391,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         # Format Section
         self.input_output_layout.addWidget(BodyLabel("🎥 选择输出的字幕格式。"))
         self.output_format = QComboBox()
-        self.output_format.addItems(['原文SRT', '中文LRC', '中文SRT', '双语SRT'])
+        self.output_format.addItems(['原文SRT', '原文LRC', '中文LRC', '双语LRC', '中文SRT', '双语SRT'])
         self.output_format.setCurrentText('中文SRT')
         self.input_output_layout.addWidget(self.output_format)
 
@@ -1148,6 +1148,12 @@ class MainWorker(QObject):
                 if output_format == '原文SRT' or output_format == '双语SRT':
                     make_srt(output_file_path, input_file+'.srt')
 
+                if output_format == '原文LRC' or output_format == '双语LRC':
+                    lrc_path = input_file + '.lrc'
+                    if output_format == '双语LRC':
+                        lrc_path = input_file + '.orig.lrc'
+                    make_lrc(output_file_path, lrc_path)
+
                 if os.path.exists(wav_file):
                     os.remove(wav_file)
 
@@ -1196,11 +1202,17 @@ class MainWorker(QObject):
             if output_format == '中文SRT' or output_format == '双语SRT':
                 make_srt(output_file_path.replace('gt_input','gt_output'), input_file+'.zh.srt')
 
-            if output_format == '中文LRC':
-                make_lrc(output_file_path.replace('gt_input','gt_output'), input_file+'.lrc')
+            if output_format == '中文LRC' or output_format == '双语LRC':
+                lrc_path = input_file + '.lrc'
+                if output_format == '双语LRC':
+                    lrc_path = input_file + '.zh.lrc'
+                make_lrc(output_file_path.replace('gt_input','gt_output'), lrc_path)
 
             if output_format == '双语SRT':
                 merge_srt_files([input_file+'.srt',input_file+'.zh.srt'], input_file+'.combine.srt')
+
+            if output_format == '双语LRC':
+                merge_lrc_files([input_file+'.orig.lrc', input_file+'.zh.lrc'], input_file+'.combine.lrc')
 
             self.status.emit("[INFO] 字幕文件生成完成！")
 
