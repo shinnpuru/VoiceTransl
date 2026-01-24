@@ -12,6 +12,8 @@ import re
 import json
 import yaml
 import requests
+import httpx
+from openai import OpenAI
 import subprocess
 from time import sleep
 from yt_dlp import YoutubeDL
@@ -508,6 +510,10 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.gpt_address = QLineEdit()
         self.gpt_address.setPlaceholderText("例如：http://127.0.0.1:11434")
         self.advanced_settings_layout.addWidget(self.gpt_address)
+
+        self.test_online_button = QPushButton("🔍 测试在线模型API列出可用模型")
+        self.test_online_button.clicked.connect(self.run_test_online_api)
+        self.advanced_settings_layout.addWidget(self.test_online_button)
         
         self.advanced_settings_layout.addWidget(BodyLabel("💻 离线模型文件（galtransl， sakura，llamacpp）"))
         self.sakura_file = QComboBox()
@@ -692,6 +698,15 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
         self.switchTo(self.log_tab)
+
+    def run_test_online_api(self):
+        self.thread = QThread()
+        self.worker = MainWorker(self)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.test_online_api)
+        self.worker.finished.connect(self.thread.quit)
+        self.thread.start()
+        self.switchTo(self.log_tab)
     
     def cleaner(self):
         self.status.emit("[INFO] 正在清理中间文件...")
@@ -817,6 +832,57 @@ class MainWorker(QObject):
                 f.writelines(lines)
         except Exception as e:
             self.status.emit(f"[ERROR] 写入配置文件失败：{e}")
+
+    @error_handler
+    def test_online_api(self):
+        self.save_config()
+        translator = self.master.translator_group.currentText()
+        gpt_token = self.master.gpt_token.text()
+        gpt_address = self.master.gpt_address.text()
+        proxy_address = self.master.proxy_address.text()
+
+        if not gpt_token:
+            self.status.emit("[ERROR] 请先填写在线模型 Token 再进行测试。")
+            self.finished.emit()
+            return
+
+        base_url = None
+        if translator == 'gpt-custom' and gpt_address:
+            base_url = gpt_address
+        else:
+            base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
+
+        if not base_url:
+            self.status.emit("[ERROR] 当前选择的翻译器不支持在线API测试，请选择在线模型。")
+            self.finished.emit()
+            return
+
+        base_url = base_url.rstrip('/')
+        if not base_url.split('/')[-1].startswith('v'):
+            base_url = base_url + '/v1' if not 'googleapis' in base_url else base_url + '/v1beta/openai'
+
+        self.status.emit(f"[INFO] 正在测试API，地址：{base_url}/models ...")
+        try:
+            if proxy_address:
+                os.environ['HTTP_PROXY'] = proxy_address
+                os.environ['HTTPS_PROXY'] = proxy_address
+            else:
+                os.environ.pop('HTTP_PROXY', None)
+                os.environ.pop('HTTPS_PROXY', None)
+
+            client = OpenAI(api_key=gpt_token, base_url=base_url)
+            resp = client.models.list()
+
+            try:
+                body = resp.model_dump_json()[:500].replace('\n', ' ')
+            except Exception:
+                body = str(resp)[:500].replace('\n', ' ')
+
+            self.status.emit(f"[INFO] API测试完成，地址：{base_url}/models，可用模型：{body}")
+        except Exception as e:
+            self.status.emit(f"[ERROR] API测试失败：{e}")
+
+        self.finished.emit()
 
     @error_handler
     def vocal_split(self):
