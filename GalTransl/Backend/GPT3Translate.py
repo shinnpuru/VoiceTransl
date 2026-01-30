@@ -432,16 +432,11 @@ class CGPT35Translate:
         )
 
         if style_name == "precise":
-            temperature, top_p = 1.0, 0.4
-            frequency_penalty, presence_penalty = 0.3, 0.0
+            temperature = 0.1
         else:  # normal default
-            temperature, top_p = 1.0, 0.9
-            frequency_penalty, presence_penalty = 0.2, 0.0
+            temperature = 0.3
         if self.eng_type != "unoffapi":
             self.chatbot.temperature = temperature
-            self.chatbot.top_p = top_p
-            self.chatbot.frequency_penalty = frequency_penalty
-            self.chatbot.presence_penalty = presence_penalty
 
     def restore_context(self, trans_list_unhit: CTransList, num_pre_request: int):
         if self.eng_type != "unoffapi":

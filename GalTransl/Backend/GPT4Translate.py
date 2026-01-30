@@ -131,7 +131,6 @@ class CGPT4Translate:
             self.chatbot = ChatbotV3(
                 api_key=self.token.token,
                 temperature=0.4,
-                frequency_penalty=0.2,
                 system_prompt=GPT4_SYSTEM_PROMPT,
                 engine=eng_name,
                 api_address=self.token.domain + "/v1/chat/completions",
@@ -150,7 +149,6 @@ class CGPT4Translate:
             self.chatbot = ChatbotV3(
                 api_key=self.token.token,
                 temperature=0.4,
-                frequency_penalty=0.2,
                 system_prompt=system_prompt,
                 engine=eng_name,
                 api_address=self.token.domain + "/v1/chat/completions",
@@ -528,18 +526,13 @@ class CGPT4Translate:
         else:
             LOGGER.info(f"-> 使用{style_name}参数预设")
         # normal default
-        temperature, top_p = 1.0, 1.0
-        frequency_penalty, presence_penalty = 0.3, 0.0
+        temperature = 0.3
         if style_name == "precise":
-            temperature, top_p = 0.5, 1.0
-            frequency_penalty, presence_penalty = 0.3, 0.0
+            temperature = 0.1
         elif style_name == "normal":
             pass
         if self.eng_type != "unoffapi":
             self.chatbot.temperature = temperature
-            self.chatbot.top_p = top_p
-            self.chatbot.frequency_penalty = frequency_penalty
-            self.chatbot.presence_penalty = presence_penalty
 
     def restore_context(self, trans_list_unhit: CTransList, num_pre_request: int):
         if self.eng_type != "unoffapi":

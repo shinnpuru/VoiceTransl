@@ -243,7 +243,7 @@ class CSakuraTranslate:
                     # 切换模式
                     if self.transl_style == "auto":
                         self._set_gpt_style("normal")
-                    # 先增加frequency_penalty参数重试再进行二分
+                    # 先重试再进行二分
                     if not once_flag:
                         once_flag = True
                         continue
@@ -365,16 +365,11 @@ class CSakuraTranslate:
             LOGGER.info(f"-> 使用{style_name}参数预设")
 
         if style_name == "precise":
-            temperature, top_p = 0.1, 0.3
-            frequency_penalty, presence_penalty = 0.0, 0.0
+            temperature = 0.1
         elif style_name == "normal":
-            temperature, top_p = 0.3, 0.3
-            frequency_penalty, presence_penalty = 0.15, 0.0
+            temperature = 0.3
 
         self.chatbot.temperature = temperature
-        self.chatbot.top_p = top_p
-        self.chatbot.frequency_penalty = frequency_penalty
-        self.chatbot.presence_penalty = presence_penalty
 
     def restore_context(self, trans_list_unhit: CTransList, num_pre_request: int):
         if trans_list_unhit[0].prev_tran == None:

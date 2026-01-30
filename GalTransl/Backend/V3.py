@@ -69,9 +69,6 @@ class Chatbot:
         timeout: float = None,
         max_tokens: int = None,
         temperature: float = 0.5,
-        top_p: float = 1.0,
-        presence_penalty: float = 0.0,
-        frequency_penalty: float = 0.0,
         response_format: str = "",
         reply_count: int = 1,
         truncate_limit: int = None,
@@ -104,9 +101,6 @@ class Chatbot:
             else 3500
         )
         self.temperature: float = temperature
-        self.top_p: float = top_p
-        self.presence_penalty: float = presence_penalty
-        self.frequency_penalty: float = frequency_penalty
         self.response_format: str = response_format
         self.reply_count: int = reply_count
         self.timeout: float = timeout
@@ -210,15 +204,6 @@ class Chatbot:
                 "stream": True,
                 # kwargs
                 "temperature": kwargs.get("temperature", self.temperature),
-                "top_p": kwargs.get("top_p", self.top_p),
-                "presence_penalty": kwargs.get(
-                    "presence_penalty",
-                    self.presence_penalty,
-                ),
-                "frequency_penalty": kwargs.get(
-                    "frequency_penalty",
-                    self.frequency_penalty,
-                ),
                 "response_format": kwargs.get(
                     "response_format",
                     self.response_format,
@@ -232,11 +217,6 @@ class Chatbot:
                 "stream": True,
                 # kwargs
                 "temperature": kwargs.get("temperature", self.temperature),
-                "top_p": kwargs.get("top_p", self.top_p),
-                "presence_penalty": kwargs.get(
-                    "presence_penalty",
-                    self.presence_penalty,
-                ),
                 "response_format": kwargs.get(
                     "response_format",
                     self.response_format,
@@ -305,15 +285,6 @@ class Chatbot:
                 "stream": True,
                 # kwargs
                 "temperature": kwargs.get("temperature", self.temperature),
-                "top_p": kwargs.get("top_p", self.top_p),
-                "presence_penalty": kwargs.get(
-                    "presence_penalty",
-                    self.presence_penalty,
-                ),
-                "frequency_penalty": kwargs.get(
-                    "frequency_penalty",
-                    self.frequency_penalty,
-                ),
                 "n": kwargs.get("n", self.reply_count),
                 "user": role,
                 "max_tokens": self.get_max_tokens(convo_id=convo_id),
@@ -323,11 +294,6 @@ class Chatbot:
                 "stream": True,
                 # kwargs
                 "temperature": kwargs.get("temperature", self.temperature),
-                "top_p": kwargs.get("top_p", self.top_p),
-                "presence_penalty": kwargs.get(
-                    "presence_penalty",
-                    self.presence_penalty,
-                ),
                 "n": kwargs.get("n", self.reply_count),
                 "user": role,
                 "max_tokens": self.get_max_tokens(convo_id=convo_id),
