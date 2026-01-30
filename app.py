@@ -24,6 +24,11 @@ from bilibili_dl.bilibili_dl.utils import send_request
 from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from pathlib import Path
 
+
+def open_path(path_value: str):
+    target = os.path.abspath(path_value)
+    QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(target))
+
 from prompt2srt import make_srt, make_lrc, merge_lrc_files
 from srt2prompt import make_prompt, merge_srt_files
 from GalTransl.ConfigHelper import CProjectConfig
@@ -336,7 +341,7 @@ class MainWindow(QMainWindow):
 
         # open log file button
         self.open_log_button = QPushButton("📂 打开日志文件")
-        self.open_log_button.clicked.connect(lambda: os.startfile(LOG_PATH))
+        self.open_log_button.clicked.connect(lambda: open_path(LOG_PATH))
         self.log_layout.addWidget(self.open_log_button)
 
         self.addSubInterface(self.log_tab, FluentIcon.INFO, "日志", NavigationItemPosition.TOP)
@@ -430,7 +435,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         button_layout.addWidget(self.run_button)
 
         self.open_output_button = QPushButton("📁 打开下载和缓存文件夹")
-        self.open_output_button.clicked.connect(lambda: os.startfile(os.path.join(os.getcwd(),'project/cache')))
+        self.open_output_button.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'project/cache')))
         button_layout.addWidget(self.open_output_button)
 
         self.clean_button = QPushButton("🧹 清空下载和缓存")
@@ -495,9 +500,9 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.settings_layout.addWidget(self.param_whisper_faster)
 
         self.open_whisper_dir = QPushButton("📁 打开Whisper目录")
-        self.open_whisper_dir.clicked.connect(lambda: os.startfile(os.path.join(os.getcwd(),'whisper')))
+        self.open_whisper_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'whisper')))
         self.open_faster_dir = QPushButton("📁 打开Faster Whisper目录")
-        self.open_faster_dir.clicked.connect(lambda: os.startfile(os.path.join(os.getcwd(),'whisper-faster')))
+        self.open_faster_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'whisper-faster')))
         self.settings_layout.addWidget(self.open_whisper_dir)
         self.settings_layout.addWidget(self.open_faster_dir)
 
@@ -508,7 +513,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.uvr_file.addItems(uvr_lst)
         self.settings_layout.addWidget(self.uvr_file)
         self.open_uvr_dir = QPushButton("📁 打开UVR模型目录")
-        self.open_uvr_dir.clicked.connect(lambda: os.startfile(os.path.join(os.getcwd(),'uvr')))
+        self.open_uvr_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'uvr')))
         self.settings_layout.addWidget(self.open_uvr_dir)
 
         self.addSubInterface(self.settings_tab, FluentIcon.SETTING, "语音模型", NavigationItemPosition.TOP)
@@ -555,7 +560,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.advanced_settings_layout.addWidget(self.param_llama)
 
         self.open_model_dir = QPushButton("📁 打开离线模型目录")
-        self.open_model_dir.clicked.connect(lambda: os.startfile(os.path.join(os.getcwd(),'llama')))
+        self.open_model_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'llama')))
         self.advanced_settings_layout.addWidget(self.open_model_dir)
 
         self.test_online_button = QPushButton("🔍 测试模型API并列出可用模型")
@@ -770,7 +775,8 @@ class MainWorker(QObject):
         self._stop_requested = False
 
     def _start_process(self, args):
-        proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
+        creationflags = 0x08000000 if os.name == 'nt' else 0
+        proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stdout, creationflags=creationflags)
         self.child_processes.append(proc)
         self.pid = proc
         return proc
