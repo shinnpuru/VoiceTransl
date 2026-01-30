@@ -26,7 +26,7 @@ from GalTransl.Backend.Prompts import (
     GPT4Turbo_CONF_PROMPT,
     GPT4Turbo_PROOFREAD_PROMPT,
 )
-
+from GalTransl.Backend.V3 import Chatbot as ChatbotV3
 
 class CGPT4Translate:
     # init
@@ -125,7 +125,6 @@ class CGPT4Translate:
     def init_chatbot(self, eng_type, config):
         eng_name = config.getBackendConfigSection("GPT4").get("rewriteModelName", "")
         if eng_type == "gpt4":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             self.token = self.tokenProvider.getToken(False, True)
             eng_name = "gpt-4" if eng_name == "" else eng_name
@@ -144,7 +143,6 @@ class CGPT4Translate:
                 self.proxyProvider.getProxy().addr if self.proxyProvider else None
             )
         elif eng_type == "gpt4-turbo":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             self.token = self.tokenProvider.getToken(False, True)
             eng_name = "gpt-4-0125-preview" if eng_name == "" else eng_name

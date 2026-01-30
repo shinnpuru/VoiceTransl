@@ -9,7 +9,7 @@ from GalTransl.CSentense import CSentense, CTransList
 from GalTransl.Cache import get_transCache_from_json, save_transCache_to_json
 from GalTransl.Dictionary import CGptDict
 from GalTransl.Backend.Prompts import Sakura_TRANS_PROMPT, Sakura_SYSTEM_PROMPT,Sakura_TRANS_PROMPT010,Sakura_SYSTEM_PROMPT010, Qwen_SYSTEM_PROMPT, Qwen_TRANS_PROMPT
-
+from GalTransl.Backend.V3 import Chatbot as ChatbotV3
 
 class CSakuraTranslate:
     # init
@@ -54,7 +54,6 @@ class CSakuraTranslate:
 
     def init_chatbot(self, eng_type, config: CProjectConfig):
         if eng_type == "sakura-009":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             endpoint = config.getBackendConfigSection("Sakura").get("endpoint")
             if endpoint.endswith("/"):
@@ -75,7 +74,6 @@ class CSakuraTranslate:
             self._current_style = "precies"
             self._set_gpt_style("precise")
         if eng_type == "sakura-010":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             endpoint = config.getBackendConfigSection("Sakura").get("endpoint")
             if endpoint.endswith("/"):
@@ -96,7 +94,6 @@ class CSakuraTranslate:
             self._current_style = "precies"
             self._set_gpt_style("precise")
         if eng_type == "qwen-local":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             endpoint = config.getBackendConfigSection("Sakura").get("endpoint")
             if endpoint.endswith("/"):

@@ -9,7 +9,7 @@ from GalTransl import LOGGER
 from GalTransl.ConfigHelper import CProjectConfig, CProxy
 from typing import Optional, Tuple
 from random import choice
-
+from GalTransl.Backend.V3 import handle_special_api
 TRANSLATOR_ENGINE = {
     "gpt35": "gpt-3.5-turbo",
     "gpt35-0613": "gpt-3.5-turbo-0613",
@@ -115,14 +115,7 @@ class COpenAITokenPool:
                     model_name = self.force_eng_name
                 # test if have balance
                 api_address = token.domain + "/v1/chat/completions"
-                if 'bigmodel' in api_address:
-                    api_address = api_address.replace('v1', 'v4')
-                if 'minimax' in api_address:
-                    api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
-                if 'ark.cn' in api_address:
-                    api_address = api_address.replace('v1', 'v3')
-                if 'google' in api_address:
-                    api_address = api_address.replace('v1', 'v1beta/openai')
+                api_address = handle_special_api(api_address)
                 chatResponse = await client.post(
                     api_address,
                     headers=auth,

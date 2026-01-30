@@ -14,6 +14,18 @@ import tiktoken
 from . import typings as t
 from .utils import get_filtered_keys_from_object
 
+def handle_special_api(api_address: str) -> str:
+    if 'bigmodel' in api_address:
+        api_address = api_address.replace('v1', 'v4')
+    if 'minimax' in api_address:
+        api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
+    if 'ark.cn' in api_address:
+        api_address = api_address.replace('v1', 'v3')
+    if 'google' in api_address:
+        api_address = api_address.replace('v1', 'v1beta/openai')
+    if 'localhost:8989' in api_address:
+        api_address = api_address.replace('/chat', '')
+    return api_address
 
 class Chatbot:
     """
@@ -282,14 +294,7 @@ class Chatbot:
         self.add_to_conversation(prompt, "user", convo_id=convo_id)
         self.__truncate_conversation(convo_id=convo_id)
         # Get response
-        if 'bigmodel' in self.api_address:
-            self.api_address = self.api_address.replace('v1', 'v4')
-        if 'minimax' in self.api_address:
-            self.api_address = self.api_address.replace('/chat/completions', '/text/chatcompletion_v2')
-        if 'ark.cn' in self.api_address:
-            self.api_address = self.api_address.replace('v1', 'v3')
-        if 'google' in self.api_address:
-            self.api_address = self.api_address.replace('v1', 'v1beta/openai')
+        self.api_address = handle_special_api(self.api_address)
         async with self.aclient.stream(
             "post",
             self.api_address,

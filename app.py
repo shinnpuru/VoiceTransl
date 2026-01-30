@@ -35,6 +35,7 @@ ONLINE_TRANSLATOR_MAPPING = {
     'doubao': 'https://ark.cn-beijing.volces.com/api',
     'aliyun': 'https://dashscope.aliyuncs.com/compatible-mode',
     'gemini': 'https://generativelanguage.googleapis.com',
+    'grok': 'https://api.grok.ai',
     'ollama': 'http://localhost:11434',
     'llamacpp': 'http://localhost:8989',
 }
@@ -459,7 +460,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.extra_prompt.setPlaceholderText("请在这里输入额外的提示信息，例如世界书或台本内容。")
         self.dict_layout.addWidget(self.extra_prompt)
 
-        self.addSubInterface(self.dict_tab, FluentIcon.DICTIONARY, "字典设置", NavigationItemPosition.TOP)
+        self.addSubInterface(self.dict_tab, FluentIcon.SETTING, "字典设置", NavigationItemPosition.TOP)
         
     def initSettingsTab(self):
         self.settings_tab = Widget("Settings", self)
@@ -526,7 +527,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.gpt_model.setPlaceholderText("例如：deepseek-chat")
         self.advanced_settings_layout.addWidget(self.gpt_model)
 
-        self.advanced_settings_layout.addWidget(BodyLabel("🚀 在线模型API地址（gpt-custom）"))
+        self.advanced_settings_layout.addWidget(BodyLabel("🚀 在线模型API地址，省略/v1/chat/completions（gpt-custom）"))
         self.gpt_address = QLineEdit()
         self.gpt_address.setPlaceholderText("例如：http://127.0.0.1:11434")
         self.advanced_settings_layout.addWidget(self.gpt_address)
@@ -543,7 +544,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         
         self.advanced_settings_layout.addWidget(BodyLabel("💻 离线模型GPU加载层数（galtransl， sakura，llamacpp）"))
         self.sakura_mode = QLineEdit()
-        self.sakura_mode.setPlaceholderText("100")
+        self.sakura_mode.setText("100")
         self.advanced_settings_layout.addWidget(self.sakura_mode)
 
         self.advanced_settings_layout.addWidget(BodyLabel("💻 离线模型命令行参数。"))
@@ -891,6 +892,7 @@ class MainWorker(QObject):
         translator = self.master.translator_group.currentText()
         gpt_token = self.master.gpt_token.text()
         gpt_address = self.master.gpt_address.text()
+        gpt_model = self.master.gpt_model.text()
         proxy_address = self.master.proxy_address.text()
 
         if not gpt_token:
@@ -904,14 +906,12 @@ class MainWorker(QObject):
         else:
             base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
 
-        if not base_url:
-            self.status.emit("[ERROR] 当前选择的翻译器不支持在线API测试，请选择在线模型。")
+        if not base_url or 'llamacpp' in translator or 'sakura' in translator or 'galtransl' in translator:
+            self.status.emit("[ERROR] 不支持离线API测试，请选择在线模型。")
             self.finished.emit()
             return
 
         base_url = base_url.rstrip('/')
-        if not base_url.split('/')[-1].startswith('v'):
-            base_url = base_url + '/v1' if not 'googleapis' in base_url else base_url + '/v1beta/openai'
 
         self.status.emit(f"[INFO] 正在测试API，地址：{base_url}/models ...")
         try:
@@ -1306,7 +1306,7 @@ class MainWorker(QObject):
                         break
                     try:
                         response = requests.get("http://localhost:8989")
-                        if response.status_code == 200:
+                        if response.status_code < 500:
                             break
                     except requests.exceptions.RequestException:
                         pass

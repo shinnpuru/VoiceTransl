@@ -15,7 +15,7 @@ from GalTransl.COpenAI import COpenAIToken, COpenAITokenPool, initGPTToken
 from GalTransl.ConfigHelper import CProxyPool
 from GalTransl.Dictionary import CGptDict
 from GalTransl.Cache import get_transCache_from_json, save_transCache_to_json
-from GalTransl.Backend.revChatGPT.typings import APIConnectionError
+from GalTransl.Backend.typings import APIConnectionError
 from GalTransl.Utils import extract_code_blocks
 from httpx import ProtocolError
 from GalTransl import LOGGER, LANG_SUPPORTED
@@ -29,6 +29,7 @@ from GalTransl.Backend.Prompts import (
     GPT35_0125_SYSTEM_PROMPT,
     GPT35_0125_TRANS_PROMPT,
 )
+from GalTransl.Backend.V3 import Chatbot as ChatbotV3
 
 
 class CGPT35Translate:
@@ -122,8 +123,7 @@ class CGPT35Translate:
         eng_name = config.getBackendConfigSection("GPT35").get("rewriteModelName", "")
 
         if eng_type == "gpt35-0613":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
-
+            
             self.token = self.tokenProvider.getToken(True, False)
             eng_name = "gpt-3.5-turbo-0613" if eng_name == "" else eng_name
             # it's a workarounds, and we'll replace this soloution with a custom OpenAI API wrapper?
@@ -140,7 +140,6 @@ class CGPT35Translate:
                 self.proxyProvider.getProxy().addr if self.proxyProvider else None  # type: ignore
             )
         elif eng_type == "gpt35-1106":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             self.token = self.tokenProvider.getToken(True, False)
             eng_name = "gpt-3.5-turbo-1106" if eng_name == "" else eng_name
@@ -159,7 +158,6 @@ class CGPT35Translate:
                 self.proxyProvider.getProxy().addr if self.proxyProvider else None  # type: ignore
             )
         elif eng_type == "gpt35-0125":
-            from GalTransl.Backend.revChatGPT.V3 import Chatbot as ChatbotV3
 
             self.token = self.tokenProvider.getToken(True, False)
             eng_name = "gpt-3.5-turbo-0125" if eng_name == "" else eng_name
