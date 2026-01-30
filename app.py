@@ -1073,7 +1073,7 @@ class MainWorker(QObject):
                 if subtitle_font:
                     self.status.emit(f"[INFO] 使用字幕字体：{subtitle_font}")
 
-                proc = self._start_process(['ffmpeg', '-y', '-i', input_file,  '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', input_file+'_synth.mp4'])
+                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file,  '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', input_file+'_synth.mp4'])
                 proc.wait()
                 self._cleanup_process(proc)
                 self.status.emit("[INFO] 视频合成完成！")
@@ -1097,7 +1097,7 @@ class MainWorker(QObject):
 
                 self.status.emit(f"[INFO] 当前处理文件：{input_file} 第{idx+1}个，共{len(input_files)}个")
                 self.status.emit(f"[INFO] 正在进行切片...从{clip_start}到{clip_end}...")
-                proc = self._start_process(['ffmpeg', '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]])
+                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]])
                 proc.wait()
                 self._cleanup_process(proc)
                 self.status.emit("[INFO] 视频切片完成！")
@@ -1127,7 +1127,7 @@ class MainWorker(QObject):
                     self.finished.emit()
 
                 self.status.emit(f"[INFO] 当前处理文件：{audio_input} 第{idx+1}个，共{len(image_files)}个")
-                proc = self._start_process(['ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'])
+                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'])
                 proc.wait()
                 self._cleanup_process(proc)
                 self.status.emit("[INFO] 视频合成完成！")
@@ -1253,7 +1253,7 @@ class MainWorker(QObject):
 
                 wav_file = '.'.join(input_file.split('.')[:-1]) + '.16k.wav'
                 self.status.emit("[INFO] 正在进行音频提取...")
-                proc = self._start_process(['ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file])
+                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file])
                 proc.wait()
                 self._cleanup_process(proc)
 
