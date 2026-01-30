@@ -275,9 +275,29 @@ class MainWindow(QMainWindow):
             self.log_display.appendPlainText(f"[{timestamp}] 读取日志文件时发生未知错误: {e}\n")
 
     def closeEvent(self, event):
-        """确保在关闭窗口时停止定时器"""
+        """确保在关闭窗口时停止定时器并关闭子进程"""
         self.timer.stop()
+        self.shutdown_children()
+        if getattr(self, 'tray_icon', None):
+            self.tray_icon.hide()
         event.accept()
+
+    def shutdown_children(self):
+        """关闭后台线程和子进程"""
+        try:
+            if self.worker:
+                self.worker.stop()
+        except Exception:
+            pass
+
+        try:
+            if self.thread and self.thread.isRunning():
+                self.thread.quit()
+                if not self.thread.wait(2000):
+                    self.thread.terminate()
+                    self.thread.wait(2000)
+        except Exception:
+            pass
 
     def changeEvent(self, event):
         # Hide window instead of cluttering the taskbar when minimized
@@ -736,6 +756,38 @@ class MainWorker(QObject):
         super().__init__()
         self.master = master
         self.status = master.status
+        self.child_processes = []
+        self._stop_requested = False
+
+    def _start_process(self, args):
+        proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
+        self.child_processes.append(proc)
+        self.pid = proc
+        return proc
+
+    def _cleanup_process(self, proc):
+        if not proc:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait(timeout=3)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        finally:
+            if proc in self.child_processes:
+                self.child_processes.remove(proc)
+
+    def _terminate_all_children(self):
+        for proc in list(self.child_processes):
+            self._cleanup_process(proc)
+
+    def stop(self):
+        self._stop_requested = True
+        self._terminate_all_children()
 
     @error_handler
     def save_config(self):
@@ -897,15 +949,16 @@ class MainWorker(QObject):
         if input_files:
             input_files = input_files.strip().split('\n')
             for idx, input_file in enumerate(input_files):
+                if self._stop_requested:
+                    break
                 if not os.path.exists(input_file):
                     self.status.emit(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
                     self.finished.emit()
 
                 self.status.emit(f"[INFO] 正在进行伴奏分离...第{idx+1}个，共{len(input_files)}个")
-                self.pid = subprocess.Popen(['uvr/separate', '-m', os.path.join('uvr',uvr_file), input_file], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
-                self.pid.wait()
-                self.pid.kill()
-                self.pid.terminate()
+                proc = self._start_process(['uvr/separate', '-m', os.path.join('uvr',uvr_file), input_file])
+                proc.wait()
+                self._cleanup_process(proc)
 
             self.status.emit("[INFO] 文件处理完成！")
         self.finished.emit()
@@ -993,6 +1046,8 @@ class MainWorker(QObject):
                 self.finished.emit()
             
             for idx, (input_file, input_srt) in enumerate(zip(video_files, srt_files)):
+                if self._stop_requested:
+                    break
                 if not os.path.exists(input_file):
                     self.status.emit(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
                     self.finished.emit()
@@ -1008,10 +1063,9 @@ class MainWorker(QObject):
                 if subtitle_font:
                     self.status.emit(f"[INFO] 使用字幕字体：{subtitle_font}")
 
-                self.pid = subprocess.Popen(['ffmpeg', '-y', '-i', input_file,  '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', input_file+'_synth.mp4'], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
-                self.pid.wait()
-                self.pid.kill()
-                self.pid.terminate()
+                proc = self._start_process(['ffmpeg', '-y', '-i', input_file,  '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', input_file+'_synth.mp4'])
+                proc.wait()
+                self._cleanup_process(proc)
                 self.status.emit("[INFO] 视频合成完成！")
             
         self.finished.emit()
@@ -1025,16 +1079,17 @@ class MainWorker(QObject):
         if input_files:
             input_files = input_files.strip().split('\n')
             for idx, input_file in enumerate(input_files):
+                if self._stop_requested:
+                    break
                 if not os.path.exists(input_file):
                     self.status.emit(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
                     self.finished.emit()
 
                 self.status.emit(f"[INFO] 当前处理文件：{input_file} 第{idx+1}个，共{len(input_files)}个")
                 self.status.emit(f"[INFO] 正在进行切片...从{clip_start}到{clip_end}...")
-                self.pid = subprocess.Popen(['ffmpeg', '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
-                self.pid.wait()
-                self.pid.kill()
-                self.pid.terminate()
+                proc = self._start_process(['ffmpeg', '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]])
+                proc.wait()
+                self._cleanup_process(proc)
                 self.status.emit("[INFO] 视频切片完成！")
         self.finished.emit()
 
@@ -1051,6 +1106,8 @@ class MainWorker(QObject):
                 self.finished.emit()
             
             for idx, (audio_input, image_input) in enumerate(zip(audio_files, image_files)):
+                if self._stop_requested:
+                    break
                 if not os.path.exists(audio_input):
                     self.status.emit(f"[ERROR] {audio_input}文件不存在，请重新选择文件！")
                     self.finished.emit()
@@ -1060,10 +1117,9 @@ class MainWorker(QObject):
                     self.finished.emit()
 
                 self.status.emit(f"[INFO] 当前处理文件：{audio_input} 第{idx+1}个，共{len(image_files)}个")
-                self.pid = subprocess.Popen(['ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
-                self.pid.wait()
-                self.pid.kill()
-                self.pid.terminate()
+                proc = self._start_process(['ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'])
+                proc.wait()
+                self._cleanup_process(proc)
                 self.status.emit("[INFO] 视频合成完成！")
             
         self.finished.emit()
@@ -1137,6 +1193,8 @@ class MainWorker(QObject):
         self.update_translation_config()
 
         for idx, input_file in enumerate(input_files):
+            if self._stop_requested:
+                break
             if not os.path.exists(input_file):
                 if input_file.startswith('BV'):
                     self.status.emit("[INFO] 正在下载视频...")
@@ -1183,10 +1241,9 @@ class MainWorker(QObject):
 
                 wav_file = '.'.join(input_file.split('.')[:-1]) + '.16k.wav'
                 self.status.emit("[INFO] 正在进行音频提取...")
-                self.pid = subprocess.Popen(['ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
-                self.pid.wait()
-                self.pid.kill()
-                self.pid.terminate()
+                proc = self._start_process(['ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file])
+                proc.wait()
+                self._cleanup_process(proc)
 
                 if not os.path.exists(wav_file):
                     self.status.emit("[ERROR] 音频提取失败，请检查文件格式！")
@@ -1196,16 +1253,15 @@ class MainWorker(QObject):
 
                 if whisper_file.startswith('ggml'):
                     print(param_whisper)
-                    self.pid = subprocess.Popen([param.replace('$whisper_file',whisper_file).replace('$input_file',wav_file[:-4]).replace('$language',language) for param in param_whisper.split()], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
+                    proc = self._start_process([param.replace('$whisper_file',whisper_file).replace('$input_file',wav_file[:-4]).replace('$language',language) for param in param_whisper.split()])
                 elif whisper_file.startswith('faster-whisper'):
                     print(param_whisper_faster)
-                    self.pid = subprocess.Popen([param.replace('$whisper_file',whisper_file[15:]).replace('$input_file',wav_file[:-4]).replace('$language',language).replace('$output_dir',os.path.dirname(input_file)) for param in param_whisper_faster.split()], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
+                    proc = self._start_process([param.replace('$whisper_file',whisper_file[15:]).replace('$input_file',wav_file[:-4]).replace('$language',language).replace('$output_dir',os.path.dirname(input_file)) for param in param_whisper_faster.split()])
                 else:
                     self.status.emit("[INFO] 不进行听写，跳过听写步骤...")
                     continue
-                self.pid.wait()
-                self.pid.kill()
-                self.pid.terminate()
+                proc.wait()
+                self._cleanup_process(proc)
 
                 input_file = wav_file[:-8]
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file)+'.json')
@@ -1242,10 +1298,12 @@ class MainWorker(QObject):
                     continue
                 
                 print(param_llama)
-                self.pid = subprocess.Popen([param.replace('$model_file',sakura_file).replace('$num_layers',sakura_mode).replace('$port', '8989') for param in param_llama.split()], stdout=sys.stdout, stderr=sys.stdout, creationflags=0x08000000)
+                proc = self._start_process([param.replace('$model_file',sakura_file).replace('$num_layers',sakura_mode).replace('$port', '8989') for param in param_llama.split()])
                 
                 self.status.emit("[INFO] 正在等待Sakura翻译器启动...")
                 while True:
+                    if self._stop_requested:
+                        break
                     try:
                         response = requests.get("http://localhost:8989")
                         if response.status_code == 200:
@@ -1253,6 +1311,10 @@ class MainWorker(QObject):
                     except requests.exceptions.RequestException:
                         pass
                     sleep(1)
+
+                if self._stop_requested:
+                    self._cleanup_process(proc)
+                    break
 
             if 'galtransl' in translator:
                 worker_trans = 'sakura-010'
@@ -1284,8 +1346,7 @@ class MainWorker(QObject):
 
             if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
                 self.status.emit("[INFO] 正在关闭Llamacpp翻译器...")
-                self.pid.kill()
-                self.pid.terminate()
+                self._cleanup_process(proc)
 
         self.status.emit("[INFO] 所有文件处理完成！")
         self.finished.emit()
