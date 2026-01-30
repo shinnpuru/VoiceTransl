@@ -164,13 +164,26 @@ class CProxyPool:
         try:
             st = time()
             LOGGER.debug("start testing proxy %s", proxy.addr)
-            async with AsyncClient(proxies={"http://": proxy.addr}) as client:
+            if not proxy.addr:
+                LOGGER.debug("proxy address is empty, skip")
+                return False, proxy
+            try:
+                client = AsyncClient(
+                    proxies={"http://": proxy.addr, "https://": proxy.addr}
+                )
+            except TypeError:
+                # httpx>=0.28 uses `proxy` instead of `proxies`
+                client = AsyncClient(proxy=proxy.addr)
+            async with client:
                 response = await client.get(test_address)
                 if response.status_code != 204:
                     LOGGER.debug("tested proxy %s failed (%s)", proxy.addr, response)
                     return False, proxy
                 else:
                     return True, proxy
+        except TypeError as e:
+            LOGGER.error("proxy test failed due to TypeError: %s", e)
+            return False, proxy
         except TimeoutException:
             LOGGER.debug("we got exception in testing proxy %s", proxy.addr)
             return False, proxy

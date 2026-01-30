@@ -17,20 +17,28 @@ from .utils import get_filtered_keys_from_object
 def handle_special_api(api_address: str) -> str:
     if 'bigmodel' in api_address:
         api_address = api_address.replace('v1', 'v4')
-    if 'minimax' in api_address:
-        api_address = api_address.replace('/chat/completions', '/text/chatcompletion_v2')
     if 'ark.cn' in api_address:
         api_address = api_address.replace('v1', 'v3')
     if 'google' in api_address:
         api_address = api_address.replace('v1', 'v1beta/openai')
-    if 'localhost:8989' in api_address:
-        api_address = api_address.replace('/chat', '')
     return api_address
 
 class Chatbot:
     """
     Official ChatGPT API
     """
+
+    def _create_client(self, proxy: str, **kwargs) -> httpx.Client:
+        try:
+            return httpx.Client(proxies=proxy, **kwargs)
+        except TypeError:
+            return httpx.Client(proxy=proxy, **kwargs)
+
+    def _create_async_client(self, proxy: str, **kwargs) -> httpx.AsyncClient:
+        try:
+            return httpx.AsyncClient(proxies=proxy, **kwargs)
+        except TypeError:
+            return httpx.AsyncClient(proxy=proxy, **kwargs)
 
     def update_proxy(self, proxy: str) -> None:
         # 本地地址忽略代理
@@ -48,15 +56,15 @@ class Chatbot:
             proxy or os.environ.get("all_proxy") or os.environ.get("ALL_PROXY") or None
         ):
             if "socks5h" not in proxy:
-                self.aclient = httpx.AsyncClient(
+                self.aclient = self._create_async_client(
+                    proxy,
                     follow_redirects=True,
-                    proxies=proxy,
                     timeout=self.timeout,
                 )
         else:
-            self.aclient = httpx.AsyncClient(
+            self.aclient = self._create_async_client(
+                proxy,
                 follow_redirects=True,
-                proxies=proxy,
                 timeout=self.timeout,
             )
         pass
@@ -328,7 +336,9 @@ class Chatbot:
                 if "role" in delta:
                     response_role = delta["role"]
                 if "content" in delta:
-                    content: str = delta["content"]
+                    content = delta.get("content")
+                    if content is None:
+                        continue
                     full_response += content
                     yield content
         self.add_to_conversation(full_response, "assistant", convo_id=convo_id)
@@ -421,16 +431,16 @@ class Chatbot:
                 and loaded_config["proxy"]
             ):
                 self.proxy = loaded_config.get("session", loaded_config["proxy"])
-                self.session = httpx.Client(
+                self.session = self._create_client(
+                    self.proxy,
                     follow_redirects=True,
-                    proxies=self.proxy,
                     timeout=self.timeout,
                     cookies=self.session.cookies,
                     headers=self.session.headers,
                 )
-                self.aclient = httpx.AsyncClient(
+                self.aclient = self._create_async_client(
+                    self.proxy,
                     follow_redirects=True,
-                    proxies=self.proxy,
                     timeout=self.timeout,
                     cookies=self.session.cookies,
                     headers=self.session.headers,

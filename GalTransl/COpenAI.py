@@ -106,9 +106,14 @@ class COpenAITokenPool:
         # todo: do not remove token directly, we can score the token
         try:
             st = time()
-            async with AsyncClient(
-                proxies={"https://": proxy.addr} if proxy else None
-            ) as client:
+            proxy_value = proxy.addr if proxy else None
+            try:
+                client = AsyncClient(
+                    proxies={"https://": proxy_value} if proxy_value else None
+                )
+            except TypeError:
+                client = AsyncClient(proxy=proxy_value) if proxy_value else AsyncClient()
+            async with client:
                 auth = {"Authorization": "Bearer " + token.token}
                 model_name = TRANSLATOR_ENGINE.get(eng_type, "gpt-3.5-turbo")
                 if self.force_eng_name:
@@ -126,7 +131,10 @@ class COpenAITokenPool:
                     },
                     timeout=10,
                 )
-                if chatResponse.status_code != 200:
+                if chatResponse.status_code == 401:
+                    LOGGER.debug(
+                        "OpenAI token %s is unauthorized", token.maskToken()
+                    )
                     # token not available, may token has been revoked
                     return False, False, False, token
                 else:

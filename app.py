@@ -9,13 +9,14 @@ from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, Lin
 from qfluentwidgets import FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel
 
 import re
+import asyncio
 import json
 import yaml
 import requests
 import httpx
 from openai import OpenAI
 import subprocess
-from time import sleep
+from time import sleep, time
 from yt_dlp import YoutubeDL
 from bilibili_dl.bilibili_dl.Video import Video
 from bilibili_dl.bilibili_dl.downloader import download
@@ -25,17 +26,23 @@ from pathlib import Path
 
 from prompt2srt import make_srt, make_lrc, merge_lrc_files
 from srt2prompt import make_prompt, merge_srt_files
-from GalTransl.__main__ import worker
+from GalTransl.ConfigHelper import CProjectConfig
+from GalTransl.Runner import run_galtransl
+from GalTransl.Backend.V3 import handle_special_api
 
 ONLINE_TRANSLATOR_MAPPING = {
     'moonshot': 'https://api.moonshot.cn',
+    'moonshot (international)': 'https://api.moonshot.ai',
     'glm': 'https://open.bigmodel.cn/api/paas',
+    'glm (international)': 'https://api.z.ai/api/paas',
     'deepseek': 'https://api.deepseek.com',
-    'minimax': 'https://api.minimax.chat',
+    'minimax': 'https://api.minimaxi.com',
+    'minimax (international)': 'https://api.minimaxi.io',
     'doubao': 'https://ark.cn-beijing.volces.com/api',
     'aliyun': 'https://dashscope.aliyuncs.com/compatible-mode',
     'gemini': 'https://generativelanguage.googleapis.com',
     'grok': 'https://api.grok.ai',
+    'openai': 'https://api.openai.com',
     'ollama': 'http://localhost:11434',
     'llamacpp': 'http://localhost:8989',
 }
@@ -43,7 +50,6 @@ ONLINE_TRANSLATOR_MAPPING = {
 TRANSLATOR_SUPPORTED = [
     '不进行翻译',
     "gpt-custom",
-    "sakura-009",
     "sakura-010",
     "galtransl"
 ] + list(ONLINE_TRANSLATOR_MAPPING.keys())
@@ -531,10 +537,6 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.gpt_address = QLineEdit()
         self.gpt_address.setPlaceholderText("例如：http://127.0.0.1:11434")
         self.advanced_settings_layout.addWidget(self.gpt_address)
-
-        self.test_online_button = QPushButton("🔍 测试在线模型API列出可用模型")
-        self.test_online_button.clicked.connect(self.run_test_online_api)
-        self.advanced_settings_layout.addWidget(self.test_online_button)
         
         self.advanced_settings_layout.addWidget(BodyLabel("💻 离线模型文件（galtransl， sakura，llamacpp）"))
         self.sakura_file = QComboBox()
@@ -555,6 +557,10 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.open_model_dir = QPushButton("📁 打开离线模型目录")
         self.open_model_dir.clicked.connect(lambda: os.startfile(os.path.join(os.getcwd(),'llama')))
         self.advanced_settings_layout.addWidget(self.open_model_dir)
+
+        self.test_online_button = QPushButton("🔍 测试模型API并列出可用模型")
+        self.test_online_button.clicked.connect(self.run_test_online_api)
+        self.advanced_settings_layout.addWidget(self.test_online_button)
 
         self.addSubInterface(self.advanced_settings_tab, FluentIcon.SETTING, "语言模型", NavigationItemPosition.TOP)
 
@@ -749,6 +755,9 @@ def error_handler(func):
         except Exception as e:
             self.status.emit(f"[ERROR] {e}")
             self.finished.emit()
+            # Ensure all child processes are terminated on error
+            self.stop()
+
     return wrapper
 class MainWorker(QObject):
     finished = pyqtSignal()
@@ -895,25 +904,21 @@ class MainWorker(QObject):
         gpt_model = self.master.gpt_model.text()
         proxy_address = self.master.proxy_address.text()
 
-        if not gpt_token:
-            self.status.emit("[ERROR] 请先填写在线模型 Token 再进行测试。")
-            self.finished.emit()
-            return
-
         base_url = None
         if translator == 'gpt-custom' and gpt_address:
             base_url = gpt_address
         else:
             base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
 
-        if not base_url or 'llamacpp' in translator or 'sakura' in translator or 'galtransl' in translator:
-            self.status.emit("[ERROR] 不支持离线API测试，请选择在线模型。")
+        if not base_url:
+            self.status.emit("[ERROR] 请选择模型。")
             self.finished.emit()
             return
 
-        base_url = base_url.rstrip('/')
+        base_url = base_url.rstrip('/') + '/v1/models'
+        base_url = handle_special_api(base_url)
 
-        self.status.emit(f"[INFO] 正在测试API，地址：{base_url}/models ...")
+        self.status.emit(f"[INFO] 正在测试API，地址：{base_url} ...")
         try:
             if proxy_address:
                 os.environ['HTTP_PROXY'] = proxy_address
@@ -922,15 +927,20 @@ class MainWorker(QObject):
                 os.environ.pop('HTTP_PROXY', None)
                 os.environ.pop('HTTPS_PROXY', None)
 
-            client = OpenAI(api_key=gpt_token, base_url=base_url)
-            resp = client.models.list()
+            headers = {
+                'Authorization': f'Bearer {gpt_token}',
+                'Content-Type': 'application/json'
+            }
+
+            resp = requests.get(base_url, headers=headers, timeout=20)
+            resp.raise_for_status()
 
             try:
-                body = resp.model_dump_json()[:500].replace('\n', ' ')
+                body = resp.text[:500].replace('\n', ' ')
             except Exception:
                 body = str(resp)[:500].replace('\n', ' ')
 
-            self.status.emit(f"[INFO] API测试完成，地址：{base_url}/models，可用模型：{body}")
+            self.status.emit(f"[INFO] API测试完成，地址：{base_url}，响应：{body}")
         except Exception as e:
             self.status.emit(f"[ERROR] API测试失败：{e}")
 
@@ -1192,6 +1202,7 @@ class MainWorker(QObject):
         # 统一刷新翻译配置
         self.update_translation_config()
 
+        output_file_paths = []
         for idx, input_file in enumerate(input_files):
             if self._stop_requested:
                 break
@@ -1231,6 +1242,7 @@ class MainWorker(QObject):
             if input_file.endswith('.srt'):
                 self.status.emit("[INFO] 正在进行字幕转换...")
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file).replace('.srt','.json'))
+                output_file_paths.append(output_file_path)
                 make_prompt(input_file, output_file_path)
                 self.status.emit("[INFO] 字幕转换完成！")
                 input_file = input_file[:-4]
@@ -1266,6 +1278,7 @@ class MainWorker(QObject):
                 input_file = wav_file[:-8]
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file)+'.json')
                 make_prompt(wav_file[:-4]+'.srt', output_file_path)
+                output_file_paths.append(output_file_path)
 
                 if output_format == '原文SRT' or output_format == '双语SRT':
                     make_srt(output_file_path, input_file+'.srt')
@@ -1283,48 +1296,87 @@ class MainWorker(QObject):
                     os.remove(wav_file[:-4]+'.srt')
                 self.status.emit("[INFO] 语音识别完成！")
 
-            if translator == '不进行翻译':
-                self.status.emit("[INFO] 翻译器未选择，跳过翻译步骤...")
-                continue
+        if translator == '不进行翻译':
+            self.status.emit("[INFO] 翻译器未选择，跳过翻译步骤...")
+            self.finished.emit()
+            return
 
-            if language == 'zh':
-                self.status.emit("[INFO] 听写语言为中文，跳过翻译步骤...")
-                continue
+        if language == 'zh':
+            self.status.emit("[INFO] 听写语言为中文，跳过翻译步骤...")
+            self.finished.emit()
+            return
 
-            if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
-                self.status.emit("[INFO] 正在启动Llamacpp翻译器...")
-                if not sakura_file:
-                    self.status.emit("[INFO] 未选择模型文件，跳过翻译步骤...")
-                    continue
-                
-                print(param_llama)
-                proc = self._start_process([param.replace('$model_file',sakura_file).replace('$num_layers',sakura_mode).replace('$port', '8989') for param in param_llama.split()])
-                
-                self.status.emit("[INFO] 正在等待Sakura翻译器启动...")
-                while True:
-                    if self._stop_requested:
-                        break
-                    try:
-                        response = requests.get("http://localhost:8989")
-                        if response.status_code < 500:
-                            break
-                    except requests.exceptions.RequestException:
-                        pass
-                    sleep(1)
-
+        if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
+            self.status.emit("[INFO] 正在启动Llamacpp翻译器...")
+            if not sakura_file:
+                self.status.emit("[INFO] 未选择模型文件，跳过翻译步骤...")
+                self.finished.emit()
+                return
+            
+            print(param_llama)
+            proc = self._start_process([param.replace('$model_file',sakura_file).replace('$num_layers',sakura_mode).replace('$port', '8989') for param in param_llama.split()])
+            
+            self.status.emit("[INFO] 正在等待Sakura翻译器启动并确认/chat/completions可用...")
+            expected_model = str(Path(sakura_file).name) if sakura_file else ""
+            model_ready = False
+            start_wait = time()
+            while True:
                 if self._stop_requested:
-                    self._cleanup_process(proc)
                     break
+                try:
+                    chat_resp = requests.post(
+                        "http://localhost:8989/v1/chat/completions",
+                        json={
+                            "model": expected_model,
+                            "messages": [{"role": "user", "content": "ping"}],
+                            "max_tokens": 1,
+                            "temperature": 0
+                        },
+                        timeout=8
+                    )
+                    if chat_resp.status_code == 200:
+                        try:
+                            body = chat_resp.json()
+                            if isinstance(body, dict) and body.get("choices"):
+                                model_ready = True
+                                self.status.emit("[INFO] Sakura翻译器启动并准备就绪！返回值：" + str(body)[:200])
+                                break
+                        except Exception:
+                            pass
+                except requests.exceptions.RequestException:
+                    pass
+                if time() - start_wait > 120:
+                    self.status.emit("[ERROR] Sakura翻译器启动超时或模型未加载成功。")
+                    self._cleanup_process(proc)
+                    self.finished.emit()
+                    return
+                sleep(1)
 
-            if 'galtransl' in translator:
-                worker_trans = 'sakura-010'
-            elif 'sakura' not in translator:
-                worker_trans = 'gpt35-1106'
-            else:
-                worker_trans = translator
+            if not model_ready and not self._stop_requested:
+                self.status.emit("[ERROR] 未检测到目标模型，终止翻译流程。")
+                self._cleanup_process(proc)
+                self.finished.emit()
+                return
 
-            self.status.emit("[INFO] 正在进行翻译...")
-            worker('project', 'config.yaml', worker_trans, show_banner=False)
+            if self._stop_requested:
+                self._cleanup_process(proc)
+                self.finished.emit()
+                return
+
+        self.status.emit("[INFO] 正在进行翻译...")
+        try:
+            cfg = CProjectConfig('project','config.yaml')
+            engine = 'sakura-010' if (
+                'galtransl' in translator or 'sakura' in translator or 'llamacpp' in translator
+            ) else 'gpt35-1106'
+            asyncio.run(run_galtransl(cfg, engine))
+        except Exception as e:
+            self.status.emit(f"[ERROR] 翻译过程中发生错误: {e}")
+
+        # 生成字幕文件
+        for idx, (input_file, output_file_path) in enumerate(zip(input_files, output_file_paths)):
+            if self._stop_requested:
+                break
 
             self.status.emit("[INFO] 正在生成字幕文件...")
             if output_format == '中文SRT' or output_format == '双语SRT':
@@ -1344,9 +1396,9 @@ class MainWorker(QObject):
 
             self.status.emit("[INFO] 字幕文件生成完成！")
 
-            if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
-                self.status.emit("[INFO] 正在关闭Llamacpp翻译器...")
-                self._cleanup_process(proc)
+        if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
+            self.status.emit("[INFO] 正在关闭Llamacpp翻译器...")
+            self._cleanup_process(proc)
 
         self.status.emit("[INFO] 所有文件处理完成！")
         self.finished.emit()
