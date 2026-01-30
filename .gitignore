@@ -17,3 +17,5 @@ build/
 dist/
 uvr/
 whisper-faster/whisper-faster.exe
+*.dll
+*.exe
