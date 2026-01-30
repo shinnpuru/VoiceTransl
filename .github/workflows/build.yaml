@@ -6,7 +6,16 @@ on:
   workflow_dispatch:
 jobs:
   pyinstaller-build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: App-windows
+          - os: macos-latest
+            name: App-macos
+          - os: ubuntu-latest
+            name: App-linux
     steps:
       - name: Create Executable
         uses: sayyid5416/pyinstaller@v1
@@ -14,4 +23,4 @@ jobs:
           python_ver: '3.11'
           spec: 'app.spec'
           requirements: 'requirements.txt'
-          upload_exe_with_name: 'App'
+          upload_exe_with_name: ${{ matrix.name }}
