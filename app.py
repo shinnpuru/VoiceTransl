@@ -1410,6 +1410,7 @@ class MainWorker(QObject):
         self.finished.emit()
 
 if __name__ == "__main__":
+    os.makedirs('project/cache', exist_ok=True)
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
     main_window = MainWindow()
