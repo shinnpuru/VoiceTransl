@@ -105,6 +105,45 @@ class MainWindow(QMainWindow):
         self.initLogTab()
         self.load_config()
 
+    def _normalize_drop_paths(self, mime_data):
+        paths = []
+        try:
+            urls = mime_data.urls()
+        except Exception:
+            urls = []
+
+        if urls:
+            for url in urls:
+                if url.isLocalFile():
+                    local_path = url.toLocalFile()
+                    if local_path:
+                        paths.append(local_path)
+            return paths
+
+        raw_text = mime_data.text() or ""
+        if not raw_text:
+            return paths
+
+        for item in raw_text.splitlines():
+            item = item.strip()
+            if not item:
+                continue
+            if item.startswith("file://"):
+                url = QtCore.QUrl(item)
+                local_path = url.toLocalFile()
+                if local_path:
+                    paths.append(local_path)
+                continue
+            paths.append(item)
+        return paths
+
+    def _bind_drop_event(self, text_edit):
+        def _on_drop(event):
+            paths = self._normalize_drop_paths(event.mimeData())
+            if paths:
+                text_edit.setPlainText("\n".join(paths))
+        text_edit.dropEvent = _on_drop
+
     def collect_font_candidates(self):
         # Scan ./font and common system font dirs for ttf/ttc/otf files
         candidates = []
@@ -412,7 +451,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.input_output_layout.addWidget(BodyLabel("📂 拖拽音视频/SRT文件，或输入B站BV号、YouTube及其他视频链接（每行一个）。路径请勿包含非英文和空格。"))
         self.input_files_list = QTextEdit()
         self.input_files_list.setAcceptDrops(True)
-        self.input_files_list.dropEvent = lambda e: self.input_files_list.setPlainText('\n'.join([i[8:] for i in e.mimeData().text().split('\n')]))
+        self._bind_drop_event(self.input_files_list)
         self.input_files_list.setPlaceholderText("例如：C:/video.mp4或https://www.youtube.com/watch?v=...或BV1Lxt5e8EJF")
         self.input_output_layout.addWidget(self.input_files_list)
 
@@ -574,10 +613,10 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.clip_layout = self.clip_tab.vBoxLayout
 
         # Clip Section
-        self.clip_layout.addWidget(BodyLabel("✂️ 切片工具"))
+        self.clip_layout.addWidget(BodyLabel("🔪 切片工具"))
         self.clip_files_list = QTextEdit()
         self.clip_files_list.setAcceptDrops(True)
-        self.clip_files_list.dropEvent = lambda e: self.clip_files_list.setPlainText('\n'.join([i[8:] for i in e.mimeData().text().split('\n')]))
+        self._bind_drop_event(self.clip_files_list)
         self.clip_files_list.setPlaceholderText("拖拽视频文件到方框内，并填写开始和结束时间，点击运行即可。")
         self.clip_layout.addWidget(self.clip_files_list)
 
@@ -607,7 +646,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.clip_layout.addWidget(BodyLabel("🎤 人声分离工具"))
         self.uvr_file_list = QTextEdit()
         self.uvr_file_list.setAcceptDrops(True)
-        self.uvr_file_list.dropEvent = lambda e: self.uvr_file_list.setPlainText('\n'.join([i[8:] for i in e.mimeData().text().split('\n')]))
+        self._bind_drop_event(self.uvr_file_list)
         self.uvr_file_list.setPlaceholderText("拖拽音频文件到方框内，点击运行即可。输出文件为原文件名_vocal.wav和_no_vocal.wav。")
         self.clip_layout.addWidget(self.uvr_file_list)
 
@@ -625,7 +664,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.synth_layout.addWidget(BodyLabel("💾 字幕合成工具"))
         self.synth_files_list = QTextEdit()
         self.synth_files_list.setAcceptDrops(True)
-        self.synth_files_list.dropEvent = lambda e: self.synth_files_list.setPlainText('\n'.join([i[8:] for i in e.mimeData().text().split('\n')]))
+        self._bind_drop_event(self.synth_files_list)
         self.synth_files_list.setPlaceholderText("拖拽字幕文件和视频文件到下方框内，点击运行即可。字幕和视频文件需要一一对应，例如output.mp4和output.mp4.srt。")
         self.synth_layout.addWidget(self.synth_files_list)
         hbox = QHBoxLayout()
@@ -646,7 +685,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.synth_layout.addWidget(BodyLabel("🎵 音频合成工具"))
         self.synth_audio_files_list = QTextEdit()
         self.synth_audio_files_list.setAcceptDrops(True)
-        self.synth_audio_files_list.dropEvent = lambda e: self.synth_audio_files_list.setPlainText('\n'.join([i[8:] for i in e.mimeData().text().split('\n')]))
+        self._bind_drop_event(self.synth_audio_files_list)
         self.synth_audio_files_list.setPlaceholderText("拖拽音频文件（wav，mp3，flac）和图像（png,jpg,jpeg）到下方框内，点击运行即可。音频和图像文件需要一一对应。")
         self.synth_layout.addWidget(self.synth_audio_files_list)
         self.run_synth_audio_button = QPushButton("🚀 视频合成")
@@ -667,7 +706,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.summarize_layout.addWidget(BodyLabel("📁 输入文件"))
         self.summarize_files_list = QTextEdit()
         self.summarize_files_list.setAcceptDrops(True)
-        self.summarize_files_list.dropEvent = lambda e: self.summarize_files_list.setPlainText('\n'.join([i[8:] for i in e.mimeData().text().split('\n')]))
+        self._bind_drop_event(self.summarize_files_list)
         self.summarize_files_list.setPlaceholderText("拖拽文件到方框内，点击运行即可。输出文件为输入文件名.summary.txt。")
         self.summarize_layout.addWidget(self.summarize_files_list)
 
@@ -868,7 +907,7 @@ class MainWorker(QObject):
             return
 
         for idx, line in enumerate(lines):
-            if 'language' in line:
+            if 'language:' in line:
                 lines[idx] = f'  language: "{language}2zh-cn"\n'
             if 'gpt' in translator:
                 if not gpt_address:
@@ -888,11 +927,11 @@ class MainWorker(QObject):
                         lines[idx+4] = f"    defaultEndpoint: {api}\n"
                         lines[idx+5] = f'    rewriteModelName: "{gpt_model}"\n'
             if proxy_address:
-                if 'proxy' in line:
+                if 'proxy:' in line:
                     lines[idx+1] = f"  enableProxy: true\n"
                     lines[idx+3] = f"    - address: {proxy_address}\n"
             else:
-                if 'proxy' in line:
+                if 'proxy:' in line:
                     lines[idx+1] = f"  enableProxy: false\n"
 
         try:
