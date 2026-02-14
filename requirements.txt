@@ -19,4 +19,4 @@ torch
 librosa
 onnx
 soundfile
-onnxruntime-directml
+onnxruntime
