@@ -3,6 +3,7 @@
 import soundfile as sf
 import torch 
 import os 
+import platform
 import librosa
 import numpy as np
 import onnxruntime as ort
@@ -77,7 +78,18 @@ class Predictor:
             n_fft=args["n_fft"]
         )
         
-        self.model = ort.InferenceSession(args['model_path'], providers=['DmlExecutionProvider'])
+        self.model = ort.InferenceSession(
+            args["model_path"],
+            providers=self._get_providers(),
+        )
+
+    def _get_providers(self):
+        system = platform.system()
+        if system == "Windows":
+            return ["DmlExecutionProvider"]
+        if system == "Darwin":
+            return ["CoreMLExecutionProvider"]
+        return ["CPUExecutionProvider"]
 
     def demix(self, mix):
         samples = mix.shape[-1]
