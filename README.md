@@ -1,10 +1,12 @@
 
+<p align="center">
+	<img src="icon.png" alt="Logo" width="160" />
+</p>
+
 <h1><p align='center' >VoiceTransl</p></h1>
 <div align=center><img src="https://img.shields.io/github/v/release/shinnpuru/VoiceTransl"/>   <img src="https://img.shields.io/github/license/shinnpuru/VoiceTransl"/>   <img src="https://img.shields.io/github/stars/shinnpuru/VoiceTransl"/></div>
 
 VoiceTransl是一站式离线AI视频字幕生成和翻译软件，从视频下载，音频提取，听写打轴，字幕翻译，视频合成，字幕总结各个环节为翻译者提供便利。本项目基于[Galtransl](https://github.com/xd2333/GalTransl)，采用GPLv3许可。
-
-<div align=center><img src="title.jpg" alt="title" style="width:512px;"/></div>
 
 ## 特色
 
@@ -31,6 +33,8 @@ VoiceTransl是一站式离线AI视频字幕生成和翻译软件，从视频下�
 3. 听写模式：支持音频听写，支持多种听写模型。请填写音视频文件或视频链接，语音识别选择模型，字幕翻译选择不进行翻译，然后点击运行按钮。
 4. 完整模式：支持从下载到翻译的完整流程。请填写音视频文件或视频链接，语音识别选择模型，字幕翻译选择模型，然后点击运行按钮。
 5. 工具模式：支持音频分离，音频切分，字幕合并，视频合成和视频总结。请填写相应输入，选择工具，然后点击运行按钮。
+
+<div align=center><img src="title.jpg" alt="title" style="width:512px;"/></div>
 
 ## 在线镜像
 
