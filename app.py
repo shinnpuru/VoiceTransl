@@ -77,6 +77,10 @@ class Widget(QFrame):
 class MainWindow(QMainWindow):
     status = pyqtSignal(str)
 
+    @staticmethod
+    def default_output_dir() -> str:
+        return str(Path.home() / 'Videos' / 'VoiceTransl')
+
     def __init__(self):
         super().__init__()
         self.thread = None
@@ -104,6 +108,24 @@ class MainWindow(QMainWindow):
         self.initDictTab()
         self.initLogTab()
         self.load_config()
+
+    def get_output_dir(self):
+        output_dir = ""
+        if hasattr(self, 'output_dir_edit'):
+            output_dir = self.output_dir_edit.text().strip()
+        if not output_dir:
+            output_dir = self.default_output_dir()
+        output_dir = os.path.abspath(os.path.expanduser(output_dir))
+        os.makedirs(output_dir, exist_ok=True)
+        if hasattr(self, 'output_dir_edit'):
+            self.output_dir_edit.setText(output_dir)
+        return output_dir
+
+    def browse_output_dir(self):
+        current_dir = self.get_output_dir()
+        selected = QFileDialog.getExistingDirectory(self, "选择输出目录", current_dir)
+        if selected:
+            self.output_dir_edit.setText(selected)
 
     def _normalize_drop_paths(self, mime_data):
         paths = []
@@ -191,6 +213,7 @@ class MainWindow(QMainWindow):
                 uvr_file = lines[9].strip()
                 output_format = lines[10].strip()
                 subtitle_font = lines[11].strip() if len(lines) > 11 else ""
+                output_dir = lines[12].strip() if len(lines) > 12 else self.default_output_dir()
 
                 if self.whisper_file: self.whisper_file.setCurrentText(whisper_file)
                 self.translator_group.setCurrentText(translator)
@@ -205,6 +228,11 @@ class MainWindow(QMainWindow):
                 self.output_format.setCurrentText(output_format)
                 if subtitle_font:
                     self.subtitle_font_combo.setCurrentText(subtitle_font)
+                self.output_dir_edit.setText(output_dir)
+
+        if not self.output_dir_edit.text().strip():
+            self.output_dir_edit.setText(self.default_output_dir())
+        self.get_output_dir()
 
         if os.path.exists('whisper/param.txt'):
             with open('whisper/param.txt', 'r', encoding='utf-8') as f:
@@ -461,6 +489,18 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.proxy_address.setPlaceholderText("例如：http://127.0.0.1:7890，留空为不使用")
         self.input_output_layout.addWidget(self.proxy_address)
 
+        # Output Directory Section
+        self.input_output_layout.addWidget(BodyLabel("📁 设置输出目录（下载文件与生成字幕）。"))
+        output_dir_layout = QHBoxLayout()
+        self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setPlaceholderText(self.default_output_dir())
+        self.output_dir_edit.setText(self.default_output_dir())
+        output_dir_layout.addWidget(self.output_dir_edit)
+        self.output_dir_button = QPushButton("📂 选择目录")
+        self.output_dir_button.clicked.connect(self.browse_output_dir)
+        output_dir_layout.addWidget(self.output_dir_button)
+        self.input_output_layout.addLayout(output_dir_layout)
+
         # Format Section
         self.input_output_layout.addWidget(BodyLabel("🎥 选择输出的字幕格式。"))
         self.output_format = QComboBox()
@@ -473,8 +513,8 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         self.run_button.clicked.connect(self.run_worker)
         button_layout.addWidget(self.run_button)
 
-        self.open_output_button = QPushButton("📁 打开下载和缓存文件夹")
-        self.open_output_button.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'project/cache')))
+        self.open_output_button = QPushButton("📁 打开输出目录")
+        self.open_output_button.clicked.connect(lambda: open_path(self.get_output_dir()))
         button_layout.addWidget(self.open_output_button)
 
         self.clean_button = QPushButton("🧹 清空下载和缓存")
@@ -859,10 +899,11 @@ class MainWorker(QObject):
         uvr_file = self.master.uvr_file.currentText()
         output_format = self.master.output_format.currentText()
         subtitle_font = self.master.subtitle_font_combo.currentText()
+        output_dir = self.master.get_output_dir()
 
         # save config
         with open('config.txt', 'w', encoding='utf-8') as f:
-            f.write(f"{whisper_file}\n{translator}\n{language}\n{gpt_token}\n{gpt_address}\n{gpt_model}\n{sakura_file}\n{sakura_mode}\n{proxy_address}\n{uvr_file}\n{output_format}\n{subtitle_font}\n")
+            f.write(f"{whisper_file}\n{translator}\n{language}\n{gpt_token}\n{gpt_address}\n{gpt_model}\n{sakura_file}\n{sakura_mode}\n{proxy_address}\n{uvr_file}\n{output_format}\n{subtitle_font}\n{output_dir}\n")
 
         # save whisper param
         with open('whisper/param.txt', 'w', encoding='utf-8') as f:
@@ -1197,6 +1238,7 @@ class MainWorker(QObject):
         param_whisper_faster = self.master.param_whisper_faster.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
         output_format = self.master.output_format.currentText()
+        output_dir = self.master.get_output_dir()
 
         with open('whisper/param.txt', 'w', encoding='utf-8') as f:
             f.write(param_whisper)
@@ -1208,6 +1250,7 @@ class MainWorker(QObject):
             f.write(param_llama)
 
         self.status.emit("[INFO] 正在初始化项目文件夹...")
+        self.status.emit(f"[INFO] 输出目录：{output_dir}")
 
         os.makedirs('project/cache', exist_ok=True)
         if before_dict:
@@ -1247,7 +1290,26 @@ class MainWorker(QObject):
         # 统一刷新翻译配置
         self.update_translation_config()
 
-        output_file_paths = []
+        need_translate = translator != '不进行翻译' and language != 'zh'
+        if not need_translate:
+            if translator == '不进行翻译':
+                self.status.emit("[INFO] 翻译器未选择，按单文件流程跳过翻译步骤...")
+            elif language == 'zh':
+                self.status.emit("[INFO] 听写语言为中文，按单文件流程跳过翻译步骤...")
+
+        def reset_translation_workspace():
+            for folder in ['project/gt_input', 'project/gt_output', 'project/transl_cache']:
+                if os.path.exists(folder):
+                    shutil.rmtree(folder)
+                os.makedirs(folder, exist_ok=True)
+
+        engine = 'gpt35-1106'
+        if need_translate:
+            engine = 'sakura-010' if (
+                'galtransl' in translator or 'sakura' in translator or 'llamacpp' in translator
+            ) else 'gpt35-1106'
+
+        proc = None
         for idx, input_file in enumerate(input_files):
             if self._stop_requested:
                 break
@@ -1266,30 +1328,56 @@ class MainWorker(QObject):
                     title = res['title'] if res['videos'] == 1 else res['pages'][0]['part']
                     title = re.sub(r'[.:?/\\]', ' ', title).strip()
                     title = re.sub(r'\s+', ' ', title)
-                    input_file = f'{title}.mp4'
+                    downloaded_file = os.path.abspath(f"{title}_{res['bvid']}.mp4")
+                    target_file = os.path.join(output_dir, os.path.basename(downloaded_file))
+                    if os.path.exists(downloaded_file):
+                        if os.path.exists(target_file):
+                            os.remove(target_file)
+                        input_file = shutil.move(downloaded_file, target_file)
+                    else:
+                        self.status.emit(f"[ERROR] 下载完成但未找到文件：{downloaded_file}")
+                        self.finished.emit()
+                        return
 
                 else:
-                    if os.path.exists('YoutubeDL.webm'):
-                        os.remove('YoutubeDL.webm')
-                    with YoutubeDL({'proxy': proxy_address,'outtmpl': 'YoutubeDL.webm'}) as ydl:
-                        self.status.emit("[INFO] 正在下载视频...")
-                        results = ydl.download([input_file])
-                        self.status.emit("[INFO] 视频下载完成！")
-                    input_file = 'YoutubeDL.webm'
+                    ydl_outtmpl = os.path.join(output_dir, 'YoutubeDL_%(title)s_%(id)s.%(ext)s')
+                    if proxy_address:
+                        ydl_ctx = YoutubeDL({'proxy': proxy_address, 'outtmpl': ydl_outtmpl})
+                    else:
+                        ydl_ctx = YoutubeDL({'outtmpl': ydl_outtmpl})
 
-                if os.path.exists(os.path.join('project/cache', os.path.basename(input_file))):
-                    os.remove(os.path.join('project/cache', os.path.basename(input_file)))
-                input_file = shutil.move(input_file, 'project/cache/')
+                    with ydl_ctx as ydl:
+                        self.status.emit("[INFO] 正在下载视频...")
+                        info = ydl.extract_info(input_file, download=True)
+                        self.status.emit("[INFO] 视频下载完成！")
+                        input_file = ydl.prepare_filename(info)
+                        requested_downloads = info.get('requested_downloads') if isinstance(info, dict) else None
+                        if requested_downloads and isinstance(requested_downloads[0], dict):
+                            actual_file = requested_downloads[0].get('filepath')
+                            if actual_file:
+                                input_file = actual_file
+                        if isinstance(info, dict) and info.get('_filename') and os.path.exists(info.get('_filename')):
+                            input_file = info.get('_filename')
+
+                    input_file = os.path.abspath(str(input_file or ''))
+                    if not os.path.exists(input_file):
+                        self.status.emit(f"[ERROR] 下载完成但未找到文件：{input_file}")
+                        self.finished.emit()
+                        return
 
             self.status.emit(f"[INFO] 当前处理文件：{input_file} 第{idx+1}个，共{len(input_files)}个")
+            if need_translate:
+                reset_translation_workspace()
+            else:
+                os.makedirs('project/gt_input', exist_ok=True)
 
-            os.makedirs('project/gt_input', exist_ok=True)
             if input_file.endswith('.srt'):
                 self.status.emit("[INFO] 正在进行字幕转换...")
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file).replace('.srt','.json'))
-                output_file_paths.append(output_file_path)
                 make_prompt(input_file, output_file_path)
                 self.status.emit("[INFO] 字幕转换完成！")
+                if output_format == '双语LRC':
+                    make_lrc(output_file_path, input_file[:-4] + '.orig.lrc')
                 input_file = input_file[:-4]
             else:
                 if whisper_file == '不进行听写':
@@ -1323,7 +1411,6 @@ class MainWorker(QObject):
                 input_file = wav_file[:-8]
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file)+'.json')
                 make_prompt(wav_file[:-4]+'.srt', output_file_path)
-                output_file_paths.append(output_file_path)
 
                 if output_format == '原文SRT' or output_format == '双语SRT':
                     make_srt(output_file_path, input_file+'.srt')
@@ -1341,107 +1428,90 @@ class MainWorker(QObject):
                     os.remove(wav_file[:-4]+'.srt')
                 self.status.emit("[INFO] 语音识别完成！")
 
-        if translator == '不进行翻译':
-            self.status.emit("[INFO] 翻译器未选择，跳过翻译步骤...")
-            self.finished.emit()
-            return
+            if need_translate and ('sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator):
+                self.status.emit("[INFO] 正在启动Llamacpp翻译器...")
+                if not sakura_file:
+                    self.status.emit("[INFO] 未选择模型文件，跳过翻译步骤...")
+                    need_translate = False
+                else:
+                    print(param_llama)
+                    proc = self._start_process([param.replace('$model_file',sakura_file).replace('$num_layers',sakura_mode).replace('$port', '8989') for param in param_llama.split()])
 
-        if language == 'zh':
-            self.status.emit("[INFO] 听写语言为中文，跳过翻译步骤...")
-            self.finished.emit()
-            return
-
-        if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
-            self.status.emit("[INFO] 正在启动Llamacpp翻译器...")
-            if not sakura_file:
-                self.status.emit("[INFO] 未选择模型文件，跳过翻译步骤...")
-                self.finished.emit()
-                return
-            
-            print(param_llama)
-            proc = self._start_process([param.replace('$model_file',sakura_file).replace('$num_layers',sakura_mode).replace('$port', '8989') for param in param_llama.split()])
-            
-            self.status.emit("[INFO] 正在等待Sakura翻译器启动并确认/chat/completions可用...")
-            expected_model = str(Path(sakura_file).name) if sakura_file else ""
-            model_ready = False
-            start_wait = time()
-            while True:
-                if self._stop_requested:
-                    break
-                try:
-                    chat_resp = requests.post(
-                        "http://localhost:8989/v1/chat/completions",
-                        json={
-                            "model": expected_model,
-                            "messages": [{"role": "user", "content": "ping"}],
-                            "max_tokens": 1,
-                            "temperature": 0
-                        },
-                        timeout=8
-                    )
-                    if chat_resp.status_code == 200:
+                    self.status.emit("[INFO] 正在等待Sakura翻译器启动并确认/chat/completions可用...")
+                    expected_model = str(Path(sakura_file).name) if sakura_file else ""
+                    model_ready = False
+                    start_wait = time()
+                    while True:
+                        if self._stop_requested:
+                            break
                         try:
-                            body = chat_resp.json()
-                            if isinstance(body, dict) and body.get("choices"):
-                                model_ready = True
-                                self.status.emit("[INFO] Sakura翻译器启动并准备就绪！返回值：" + str(body)[:200])
-                                break
-                        except Exception:
+                            chat_resp = requests.post(
+                                "http://localhost:8989/v1/chat/completions",
+                                json={
+                                    "model": expected_model,
+                                    "messages": [{"role": "user", "content": "ping"}],
+                                    "max_tokens": 1,
+                                    "temperature": 0
+                                },
+                                timeout=8
+                            )
+                            if chat_resp.status_code == 200:
+                                try:
+                                    body = chat_resp.json()
+                                    if isinstance(body, dict) and body.get("choices"):
+                                        model_ready = True
+                                        self.status.emit("[INFO] Sakura翻译器启动并准备就绪！返回值：" + str(body)[:200])
+                                        break
+                                except Exception:
+                                    pass
+                        except requests.exceptions.RequestException:
                             pass
-                except requests.exceptions.RequestException:
-                    pass
-                if time() - start_wait > 120:
-                    self.status.emit("[ERROR] Sakura翻译器启动超时或模型未加载成功。")
-                    self._cleanup_process(proc)
-                    self.finished.emit()
-                    return
-                sleep(1)
+                        if time() - start_wait > 120:
+                            self.status.emit("[ERROR] Sakura翻译器启动超时或模型未加载成功。")
+                            self._cleanup_process(proc)
+                            self.finished.emit()
+                            return
+                        sleep(1)
 
-            if not model_ready and not self._stop_requested:
-                self.status.emit("[ERROR] 未检测到目标模型，终止翻译流程。")
-                self._cleanup_process(proc)
-                self.finished.emit()
-                return
+                    if not model_ready and not self._stop_requested:
+                        self.status.emit("[ERROR] 未检测到目标模型，终止翻译流程。")
+                        self._cleanup_process(proc)
+                        self.finished.emit()
+                        return
 
-            if self._stop_requested:
-                self._cleanup_process(proc)
-                self.finished.emit()
-                return
+                    if self._stop_requested:
+                        self._cleanup_process(proc)
+                        self.finished.emit()
+                        return
 
-        self.status.emit("[INFO] 正在进行翻译...")
-        try:
-            cfg = CProjectConfig('project','config.yaml')
-            engine = 'sakura-010' if (
-                'galtransl' in translator or 'sakura' in translator or 'llamacpp' in translator
-            ) else 'gpt35-1106'
-            asyncio.run(run_galtransl(cfg, engine))
-        except Exception as e:
-            self.status.emit(f"[ERROR] 翻译过程中发生错误: {e}")
+            if need_translate:
+                self.status.emit("[INFO] 正在进行翻译...")
+                try:
+                    cfg = CProjectConfig('project','config.yaml')
+                    asyncio.run(run_galtransl(cfg, engine))
+                except Exception as e:
+                    self.status.emit(f"[ERROR] 翻译过程中发生错误: {e}")
+                    continue
 
-        # 生成字幕文件
-        for idx, (input_file, output_file_path) in enumerate(zip(input_files, output_file_paths)):
-            if self._stop_requested:
-                break
+                self.status.emit("[INFO] 正在生成字幕文件...")
+                if output_format == '中文SRT' or output_format == '双语SRT':
+                    make_srt(output_file_path.replace('gt_input','gt_output'), input_file+'.zh.srt')
 
-            self.status.emit("[INFO] 正在生成字幕文件...")
-            if output_format == '中文SRT' or output_format == '双语SRT':
-                make_srt(output_file_path.replace('gt_input','gt_output'), input_file+'.zh.srt')
+                if output_format == '中文LRC' or output_format == '双语LRC':
+                    lrc_path = input_file + '.lrc'
+                    if output_format == '双语LRC':
+                        lrc_path = input_file + '.zh.lrc'
+                    make_lrc(output_file_path.replace('gt_input','gt_output'), lrc_path)
 
-            if output_format == '中文LRC' or output_format == '双语LRC':
-                lrc_path = input_file + '.lrc'
+                if output_format == '双语SRT':
+                    merge_srt_files([input_file+'.srt',input_file+'.zh.srt'], input_file+'.combine.srt')
+
                 if output_format == '双语LRC':
-                    lrc_path = input_file + '.zh.lrc'
-                make_lrc(output_file_path.replace('gt_input','gt_output'), lrc_path)
+                    merge_lrc_files([input_file+'.orig.lrc', input_file+'.zh.lrc'], input_file+'.combine.lrc')
 
-            if output_format == '双语SRT':
-                merge_srt_files([input_file+'.srt',input_file+'.zh.srt'], input_file+'.combine.srt')
+                self.status.emit("[INFO] 字幕文件生成完成！")
 
-            if output_format == '双语LRC':
-                merge_lrc_files([input_file+'.orig.lrc', input_file+'.zh.lrc'], input_file+'.combine.lrc')
-
-            self.status.emit("[INFO] 字幕文件生成完成！")
-
-        if 'sakura' in translator or 'llamacpp' in translator or 'galtransl' in translator:
+        if proc:
             self.status.emit("[INFO] 正在关闭Llamacpp翻译器...")
             self._cleanup_process(proc)
 
