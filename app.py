@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def default_output_dir() -> str:
-        return str(Path.home() / 'Videos' / 'VoiceTransl')
+        return str(Path.cwd() / 'project' / 'cache')
 
     def __init__(self):
         super().__init__()
@@ -109,20 +109,8 @@ class MainWindow(QMainWindow):
         self.initLogTab()
         self.load_config()
 
-    def get_output_dir(self):
-        output_dir = ""
-        if hasattr(self, 'output_dir_edit'):
-            output_dir = self.output_dir_edit.text().strip()
-        if not output_dir:
-            output_dir = self.default_output_dir()
-        output_dir = os.path.abspath(os.path.expanduser(output_dir))
-        os.makedirs(output_dir, exist_ok=True)
-        if hasattr(self, 'output_dir_edit'):
-            self.output_dir_edit.setText(output_dir)
-        return output_dir
-
     def browse_output_dir(self):
-        current_dir = self.get_output_dir()
+        current_dir = self.output_dir_edit.text().strip() or self.default_output_dir()
         selected = QFileDialog.getExistingDirectory(self, "选择输出目录", current_dir)
         if selected:
             self.output_dir_edit.setText(selected)
@@ -232,7 +220,6 @@ class MainWindow(QMainWindow):
 
         if not self.output_dir_edit.text().strip():
             self.output_dir_edit.setText(self.default_output_dir())
-        self.get_output_dir()
 
         if os.path.exists('whisper/param.txt'):
             with open('whisper/param.txt', 'r', encoding='utf-8') as f:
@@ -514,7 +501,7 @@ VoiceTrans是一站式离线AI视频字幕生成和翻译软件，功能包括�
         button_layout.addWidget(self.run_button)
 
         self.open_output_button = QPushButton("📁 打开输出目录")
-        self.open_output_button.clicked.connect(lambda: open_path(self.get_output_dir()))
+        self.open_output_button.clicked.connect(lambda: open_path(self.output_dir_edit.text().strip() or self.default_output_dir()))
         button_layout.addWidget(self.open_output_button)
 
         self.clean_button = QPushButton("🧹 清空下载和缓存")
@@ -899,7 +886,9 @@ class MainWorker(QObject):
         uvr_file = self.master.uvr_file.currentText()
         output_format = self.master.output_format.currentText()
         subtitle_font = self.master.subtitle_font_combo.currentText()
-        output_dir = self.master.get_output_dir()
+        output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
+        output_dir = os.path.abspath(os.path.expanduser(output_dir))
+        os.makedirs(output_dir, exist_ok=True)
 
         # save config
         with open('config.txt', 'w', encoding='utf-8') as f:
@@ -927,6 +916,7 @@ class MainWorker(QObject):
 
         self.status.emit("[INFO] 配置保存完成！")
 
+    @error_handler
     def update_translation_config(self):
         self.status.emit("[INFO] 正在进行翻译配置...")
         translator = self.master.translator_group.currentText()
@@ -1238,7 +1228,7 @@ class MainWorker(QObject):
         param_whisper_faster = self.master.param_whisper_faster.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
         output_format = self.master.output_format.currentText()
-        output_dir = self.master.get_output_dir()
+        output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
 
         with open('whisper/param.txt', 'w', encoding='utf-8') as f:
             f.write(param_whisper)
@@ -1376,8 +1366,18 @@ class MainWorker(QObject):
                 output_file_path = os.path.join('project/gt_input', os.path.basename(input_file).replace('.srt','.json'))
                 make_prompt(input_file, output_file_path)
                 self.status.emit("[INFO] 字幕转换完成！")
+                # Ensure original srt is available in output_dir for later merging
+                try:
+                    orig_srt_src = os.path.abspath(input_file)
+                    orig_srt_dst = os.path.join(output_dir, os.path.basename(orig_srt_src))
+                    if os.path.exists(orig_srt_src):
+                        shutil.copy(orig_srt_src, orig_srt_dst)
+                except Exception:
+                    pass
                 if output_format == '双语LRC':
-                    make_lrc(output_file_path, input_file[:-4] + '.orig.lrc')
+                    lrc_name = os.path.basename(input_file[:-4] + '.orig.lrc')
+                    lrc_output = os.path.join(output_dir, lrc_name)
+                    make_lrc(output_file_path, lrc_output)
                 input_file = input_file[:-4]
             else:
                 if whisper_file == '不进行听写':
@@ -1413,13 +1413,17 @@ class MainWorker(QObject):
                 make_prompt(wav_file[:-4]+'.srt', output_file_path)
 
                 if output_format == '原文SRT' or output_format == '双语SRT':
-                    make_srt(output_file_path, input_file+'.srt')
+                    srt_name = os.path.basename(input_file + '.srt')
+                    srt_output = os.path.join(output_dir, srt_name)
+                    make_srt(output_file_path, srt_output)
 
                 if output_format == '原文LRC' or output_format == '双语LRC':
                     lrc_path = input_file + '.lrc'
                     if output_format == '双语LRC':
                         lrc_path = input_file + '.orig.lrc'
-                    make_lrc(output_file_path, lrc_path)
+                    lrc_name = os.path.basename(lrc_path)
+                    lrc_output = os.path.join(output_dir, lrc_name)
+                    make_lrc(output_file_path, lrc_output)
 
                 if os.path.exists(wav_file):
                     os.remove(wav_file)
@@ -1495,19 +1499,31 @@ class MainWorker(QObject):
 
                 self.status.emit("[INFO] 正在生成字幕文件...")
                 if output_format == '中文SRT' or output_format == '双语SRT':
-                    make_srt(output_file_path.replace('gt_input','gt_output'), input_file+'.zh.srt')
+                    zh_srt_name = os.path.basename(input_file + '.zh.srt')
+                    zh_srt_output = os.path.join(output_dir, zh_srt_name)
+                    make_srt(output_file_path.replace('gt_input','gt_output'), zh_srt_output)
 
                 if output_format == '中文LRC' or output_format == '双语LRC':
                     lrc_path = input_file + '.lrc'
                     if output_format == '双语LRC':
                         lrc_path = input_file + '.zh.lrc'
-                    make_lrc(output_file_path.replace('gt_input','gt_output'), lrc_path)
+                    lrc_name = os.path.basename(lrc_path)
+                    lrc_output = os.path.join(output_dir, lrc_name)
+                    make_lrc(output_file_path.replace('gt_input','gt_output'), lrc_output)
 
                 if output_format == '双语SRT':
-                    merge_srt_files([input_file+'.srt',input_file+'.zh.srt'], input_file+'.combine.srt')
+                    combine_name = os.path.basename(input_file + '.combine.srt')
+                    combine_output = os.path.join(output_dir, combine_name)
+                    left = os.path.join(output_dir, os.path.basename(input_file + '.srt'))
+                    right = os.path.join(output_dir, os.path.basename(input_file + '.zh.srt'))
+                    merge_srt_files([left, right], combine_output)
 
                 if output_format == '双语LRC':
-                    merge_lrc_files([input_file+'.orig.lrc', input_file+'.zh.lrc'], input_file+'.combine.lrc')
+                    combine_name = os.path.basename(input_file + '.combine.lrc')
+                    combine_output = os.path.join(output_dir, combine_name)
+                    left = os.path.join(output_dir, os.path.basename(input_file + '.orig.lrc'))
+                    right = os.path.join(output_dir, os.path.basename(input_file + '.zh.lrc'))
+                    merge_lrc_files([left, right], combine_output)
 
                 self.status.emit("[INFO] 字幕文件生成完成！")
 
