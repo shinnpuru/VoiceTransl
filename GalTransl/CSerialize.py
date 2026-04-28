@@ -1,4 +1,4 @@
-import json
+import orjson
 from GalTransl.CSentense import CTransList
 
 
@@ -20,8 +20,8 @@ def save_transList_to_json_cn(trans_list: CTransList, save_path: str, name_dict=
                 result_list.append({"name": result_name, "message": tran.post_zh})
         else:
             result_list.append({"message": tran.post_zh})
-    with open(save_path, "w", encoding="utf8") as f:
-        json.dump(result_list, f, ensure_ascii=False, indent=4)
+    with open(save_path, "wb") as f:
+        f.write(orjson.dumps(result_list, option=orjson.OPT_INDENT_2))
 
 
 def update_json_with_transList(
@@ -30,7 +30,7 @@ def update_json_with_transList(
     result_json_list = old_json_list.copy()
     # Iterate over the old JSON data and the trans_list simultaneously
     for old_item, tran in zip(result_json_list, trans_list):
-        # Check if the 'message' in the old JSON data matches with 'pre_jp' in the tran
+        # Check if the 'message' in the old JSON data matches with 'pre_jp' (pre_src in cache) in the tran
         if old_item.get("message") == tran.pre_jp:
             # Update the 'message' field
             old_item["message"] = tran.post_zh
@@ -54,5 +54,5 @@ def update_json_with_transList(
 
 
 def save_json(file_path: str, result_json: list):
-    with open(file_path, "w", encoding="utf8") as f:
-        json.dump(result_json, f, ensure_ascii=False, indent=4)
+    with open(file_path, "wb") as f:
+        f.write(orjson.dumps(result_json, option=orjson.OPT_INDENT_2))

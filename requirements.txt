@@ -20,3 +20,30 @@ librosa
 onnx
 soundfile
 onnxruntime
+opencc
+openai
+packaging
+PyYAML
+Requests
+tenacity
+tiktoken
+colorlog
+openpyxl
+orjson
+beautifulsoup4
+playsound3
+fasttext-predict
+InquirerPy
+alive-progress
+vaporetto
+aiofiles
+httpx-aiohttp
+
+# Tokenizer
+budoux
+# Optional tokenizers
+# jieba
+# pkuseg
+# Very heavyweight tokenizer, manual installation recommended
+# numpy < 2.0.0
+# hanlp

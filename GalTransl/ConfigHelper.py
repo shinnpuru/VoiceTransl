@@ -1,6 +1,7 @@
 """
 读取 / 处理配置
 """
+
 from GalTransl import (
     LOGGER,
     CONFIG_FILENAME,
@@ -8,8 +9,11 @@ from GalTransl import (
     OUTPUT_FOLDERNAME,
     CACHE_FOLDERNAME,
 )
+from GalTransl.Dictionary import CGptDict, CNormalDic
 from asyncio import gather
 from tenacity import retry, stop_after_attempt, wait_fixed
+import httpx
+import inspect
 from httpx import AsyncClient, TimeoutException
 from time import time
 from typing import Optional
@@ -17,6 +21,43 @@ from random import choice
 from yaml import safe_load
 from os import path, sep
 from enum import Enum
+from importlib.metadata import version
+
+
+def build_httpx_proxy_kwargs(proxy_addr: Optional[str]) -> dict:
+    """根据当前安装的 httpx 版本，返回与 `httpx.AsyncClient` 兼容的代理参数。
+
+    - httpx < 0.26: 仅支持 `proxies=`
+    - 0.26 <= httpx < 0.28: 同时支持 `proxy=` 与 `proxies=`
+    - httpx >= 0.28: 仅支持 `proxy=`
+    """
+    if not proxy_addr:
+        return {}
+    try:
+        params = inspect.signature(httpx.AsyncClient.__init__).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "proxy" in params:
+        return {"proxy": proxy_addr}
+    if "proxies" in params:
+        return {"proxies": proxy_addr}
+    # 兜底：通过 mounts 指定代理传输层
+    return {"mounts": {"all://": httpx.AsyncHTTPTransport(proxy=proxy_addr)}}
+
+
+def build_httpx_sync_proxy_kwargs(proxy_addr: Optional[str]) -> dict:
+    """同 `build_httpx_proxy_kwargs`，但用于 `httpx.Client`。"""
+    if not proxy_addr:
+        return {}
+    try:
+        params = inspect.signature(httpx.Client.__init__).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "proxy" in params:
+        return {"proxy": proxy_addr}
+    if "proxies" in params:
+        return {"proxies": proxy_addr}
+    return {"mounts": {"all://": httpx.HTTPTransport(proxy=proxy_addr)}}
 
 
 class CProxy:
@@ -46,6 +87,11 @@ class CProblemType(Enum):
     多加换行 = 5
     比日文长 = 6
     字典使用 = 7
+    引入英文 = 8
+    比日文长严格 = 9
+    语言不通 = 10
+    缺控制符 = 11
+    独白男他 = 12
 
 
 class CProjectConfig:
@@ -68,9 +114,9 @@ class CProjectConfig:
         self.keyValues = dict()
         for k, v in self.projectConfig["common"].items():
             self.keyValues[k] = v
-        self.keyValues["internals.enableProxy"] = self.projectConfig["proxy"][
-            "enableProxy"
-        ]
+        self.keyValues["internals.enableProxy"] = (
+            self.projectConfig.get("proxy", {}).get("enableProxy", False)
+        )
         LOGGER.debug(
             "inputPath: %s, outputPath: %s, cachePath: %s,keyValues: %s",
             self.inputPath,
@@ -78,6 +124,25 @@ class CProjectConfig:
             self.cachePath,
             self.keyValues,
         )
+
+        self.select_translator = ""  # 本次选择的翻译器
+        self.pre_dic: CNormalDic = None  # 预处理字典
+        self.post_dic: CNormalDic = None  # 后处理字典
+        self.gpt_dic: CGptDict = None  # gpt字典
+        self.file_save_funcs = {}  # 文件保存函数
+        self.name_replaceDict = {}  # 名字替换字典
+        self.tPlugins = []  # 文本插件列表
+        self.fPlugins = []  # 文件插件列表
+        self.tokenPool = None  # 令牌池
+        self.proxyPool = None  # 代理池
+        self.endpointQueue = None  # 端点队列
+        self.input_splitter = None  # 输入分割器
+        self.active_workers: int=0
+        self.target_lang=""
+        self.translation_guideline=""
+        self.non_interactive: bool = False  # 非交互模式（前端启动时为True）
+        self.runtime_project_dir: str = projectPath
+        
 
     def getProjectConfig(self) -> dict:
         """
@@ -112,17 +177,26 @@ class CProjectConfig:
     def getCommonConfigSection(self) -> dict:
         return self.projectConfig["common"]
 
+    def getPluginConfigSection(self) -> dict:
+        return self.projectConfig["plugin"]
+
     def getlbSymbol(self) -> str:
-        lbSymbol = self.projectConfig["common"].get("linebreakSymbol", "\r\n")
+        lbSymbol = self.projectConfig["common"].get("linebreakSymbol", "auto")
         return lbSymbol
 
     def getProxyConfigSection(self) -> dict:
-        return self.projectConfig["proxy"]["proxies"]
+        return self.projectConfig.get("proxy", {}).get("proxies", [])
 
     def getBackendConfigSection(self, backendName: str) -> dict:
         """
         backendName: GPT35 / GPT4 / ChatGPT / bingGPT4
         """
+        if backendName=="OpenAI-Compatible":
+            if "OpenAI-Compatible" not in self.projectConfig["backendSpecific"]:
+                backendName="GPT4"
+        elif backendName=="SakuraLLM":
+            if "SakuraLLM" not in self.projectConfig["backendSpecific"]:
+                backendName="Sakura"
         return self.projectConfig["backendSpecific"][backendName]
 
     def getDictCfgSection(self, key: str = "") -> dict:
@@ -133,8 +207,8 @@ class CProjectConfig:
         else:
             return None
 
-    def getKey(self, key: str) -> str | bool | int | None:
-        return self.keyValues.get(key)
+    def getKey(self, key: str, default: None = None) -> str | bool | int | None:
+        return self.keyValues.get(key, default)
 
     def getProblemAnalyzeConfig(self, backendName: str) -> list[CProblemType]:
         if backendName not in self.projectConfig["problemAnalyze"]:
@@ -146,6 +220,10 @@ class CProjectConfig:
         return result
 
     def getProblemAnalyzeArinashiDict(self) -> dict:
+        if "arinashiDict" not in self.projectConfig["problemAnalyze"]:
+            return {}
+        elif not self.projectConfig["problemAnalyze"]["arinashiDict"]:
+            return {}
         return self.projectConfig["problemAnalyze"]["arinashiDict"]
 
 
@@ -164,32 +242,20 @@ class CProxyPool:
         try:
             st = time()
             LOGGER.debug("start testing proxy %s", proxy.addr)
-            if not proxy.addr:
-                LOGGER.debug("proxy address is empty, skip")
-                return False, proxy
-            try:
-                client = AsyncClient(
-                    proxies={"http://": proxy.addr, "https://": proxy.addr}
-                )
-            except TypeError:
-                # httpx>=0.28 uses `proxy` instead of `proxies`
-                client = AsyncClient(proxy=proxy.addr)
-            async with client:
+            async with AsyncClient(**build_httpx_proxy_kwargs(proxy.addr)) as client:
                 response = await client.get(test_address)
                 if response.status_code != 204:
-                    LOGGER.debug("tested proxy %s failed (%s)", proxy.addr, response)
+                    LOGGER.debug(
+                        "tested proxy %s failed (%s)", proxy.addr, response
+                    )
                     return False, proxy
                 else:
                     return True, proxy
-        except TypeError as e:
-            LOGGER.error("proxy test failed due to TypeError: %s", e)
-            return False, proxy
         except TimeoutException:
             LOGGER.debug("we got exception in testing proxy %s", proxy.addr)
             return False, proxy
         except:
-            LOGGER.debug("we got exception in testing proxy %s", proxy.addr)
-            raise
+            LOGGER.error("代理 %s 无法连接", proxy.addr)
             return False, proxy
         finally:
             et = time()
@@ -213,7 +279,7 @@ class CProxyPool:
         rounds: int = 0
         while True:
             if rounds > 10:
-                raise RuntimeError("CProxyPool::getProxy: 迭代次数过多！")
+                raise RuntimeError("CProxyPool::getProxy: 没有可用的代理！")
             available, proxy = choice(self.proxies)
             if not available:
                 rounds += 1

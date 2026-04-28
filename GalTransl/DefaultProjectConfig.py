@@ -1,4 +1,4 @@
-# 翻译后端相关设置
+DEFAULT_PROJECT_CONFIG_YAML = """# 翻译后端相关设置
 backendSpecific:
   OpenAI-Compatible: # (ForGal/ForNovel/r1/Gendic)OpenAI API兼容接口通用
     tokens:
@@ -11,6 +11,8 @@ backendSpecific:
         stream: true # 支持为单个token设置流式请求
     tokenStrategy: "random" # 令牌策略，random随机轮询；fallback优先第一个，出现[API错误]或[解析错误]时使用下一个
     checkAvailable: true # 翻译前检查API是否可用[True/False]
+    checkAvailableConcurrency: 4 # checkAvailable阶段的并发检测数，避免启动时瞬时打满请求。[1-16]
+    globalRequestRPM: 0 # 全局跨任务请求限速（每分钟请求数）。0表示不限制。[0-60000]
     stream: true # 流式请求，一般不用修改除非接口不支持流式[True/False]
     apiTimeout: 120 # 请求超时时间，单位秒
     apiErrorWait: auto # 发生API Error时的等待时间，包括频率限制。auto将自动适应[auto/0-120]
@@ -33,8 +35,9 @@ plugin:
 
 # 程序设置
 common:
-  gpt.numPerRequestTranslate: 10 # 每次请求包含的句子数，建议不超过16。[1-32]
+  gpt.numPerRequestTranslate: 16 # 每次请求包含的句子数，建议不超过16。[1-32]
   workersPerProject: 16 # 项目级并行文件数；单文件并行需配合splitFile。
+  autoAdjustWorkers: true # 基于近期429比例和响应延迟自动调节并发worker数。[True/False]
   sortBy: "size" # 文件调度顺序：name按文件名，size优先大文件（并行时通常更快）。[name/size]
   language: "zh-cn" # 目标输出语言。[zh-cn/zh-tw/en/ja/ko/ru/fr]
 
@@ -50,9 +53,8 @@ common:
   skipH: false # 是否跳过可能触发敏感词检测的句子。[True/False]
   smartRetry: True # 解析失败时自动缩小批次并重置上下文，减少无效重试。[True/False]
   retranslFail: false # 程序重启时是否自动重翻标记为"(Failed)"的句子。[True/False]
-  retranslKey:
-    - "关键字重翻：命中缓存problem或pre_jp关键字的句子会被重翻；去掉#可启用，也可自定义关键字。"
-    - "翻译失败" # 启动时重翻命中“翻译失败”的句子
+  retranslKey: # 在下方添加需要重翻的关键字，匹配原文/译文/problem 中的子串；留空不重翻。
+    #- "翻译失败" # 启动时重翻命中“翻译失败”的句子
     #- "残留日文" # 启动时重翻命中“残留日文”的句子
 
   gpt.contextNum: 8 # 每次请求附带的前文句数；值越大上下文更强、成本更高（常用8）。[0-32]
@@ -71,7 +73,7 @@ common:
 
 # 代理设置，使用中转供应商时一般不用开代理
 proxy:
-  enableProxy: false
+  enableProxy: false # 是否启用代理。[True/False]
   proxies:
     - address: http://127.0.0.1:7890
 
@@ -87,6 +89,7 @@ problemAnalyze:
     - 字典使用 # 没有按GPT字典要求翻译
     - 语言不通 # 疑似没有被翻译成目标语言，翻译为中文时检查是否包含非GBK字符
     - 缺控制符 # 检测译文丢失ruby或其他控制符的情况
+    - 独白男他 # 独白（无name）里出现“他”，排除“其他/他们/他人/他乡/他国/他日/他山”
     #- 引入英文 # 本来没有英文，译文引入了英文
     #- 比日文长严格 # 比日文长1倍以上就提醒
 
@@ -99,7 +102,9 @@ dictionary:
   sortDict: true # 将所有字典按查找词长度重排序。[True/False]
   # 译前字典
   preDict:
-    - (project_dir)dict_pre.txt # (project_dir)代表字典在项目文件夹
+    - 01H字典_矫正_译前.txt # 用于口齿不清的矫正
+    - 00通用字典_译前.txt
+    - (project_dir)项目字典_译前.txt # (project_dir)代表字典在项目文件夹
   # GPT 字典
   gpt.dict:
     - GPT字典.txt
@@ -110,5 +115,4 @@ dictionary:
     - 00通用字典_符号_译后.txt # 符号矫正
     - 00通用字典_译后.txt
     - (project_dir)项目字典_译后.txt
-
-
+"""
