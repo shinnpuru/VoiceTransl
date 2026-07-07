@@ -1340,6 +1340,9 @@ class MainWindow(QMainWindow):
         self.about_layout.addWidget(self.start_button)
 
         self.addSubInterface(self.about_tab, FluentIcon.HEART, _("tab_about"), NavigationItemPosition.TOP)
+
+    def _on_language_changed(self):
+        pass
         
     def initInputOutputTab(self):
         self.input_output_tab = Widget("Home", self)
