@@ -9,7 +9,7 @@ import shutil
 from i18n import _, set_language, get_language
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal, QTimer, QDateTime, QSize
-from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame, QSystemTrayIcon, QMenu, QAction, QHBoxLayout, QCheckBox, QDialog, QLabel
+from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame, QSystemTrayIcon, QMenu, QAction, QHBoxLayout, QCheckBox, QDialog, QLabel, QWidget
 from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, LineEdit as QLineEdit, ComboBox as QComboBox, Slider as QSlider, FluentWindow as QMainWindow, PlainTextEdit as QPlainTextEdit, SplashScreen, SpinBox as QSpinBox
 from qfluentwidgets import FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel
 
@@ -800,6 +800,11 @@ class MainWindow(QMainWindow):
         self.msg_queue = UIMessageQueue(LOG_PATH)
         self.thread = None
         self.worker = None
+        self._suppress_auto_save = True
+        self._auto_save_timer = QTimer(self)
+        self._auto_save_timer.setSingleShot(True)
+        self._auto_save_timer.setInterval(200)
+        self._auto_save_timer.timeout.connect(self._auto_save_config)
         self.setWindowTitle(_("window_title"))
         self.setWindowIcon(QtGui.QIcon('icon.png'))
         self.init_system_tray()
@@ -818,6 +823,113 @@ class MainWindow(QMainWindow):
         self.msg_queue.put("status", msg)
         self.status.emit(msg)
 
+    def _schedule_auto_save(self):
+        """防抖自动保存：短时间内多次调用只执行最后一次"""
+        if self._auto_save_timer and not self._auto_save_timer.isActive():
+            self._auto_save_timer.start()
+
+    def _auto_save_config(self):
+        """执行静默自动保存"""
+        try:
+            self.save_config(silent=True)
+        except Exception:
+            pass
+
+    def save_config(self, silent: bool = False):
+        """保存 GUI 配置到 gui_settings.yaml 及相关文件"""
+        if not silent:
+            self._emit_status("[INFO] 正在读取配置...")
+        whisper_file = self.whisper_file.currentText()
+        translator = self.translator_group.currentText()
+        language = self.input_lang.currentText()
+        gpt_token = self.gpt_token.text()
+        gpt_address = self.gpt_address.text()
+        gpt_model = self.gpt_model.text()
+        sakura_file = self.sakura_file.currentText()
+        sakura_mode = self.sakura_mode.text()
+        proxy_address = self.proxy_address.text()
+        uvr_file = self.uvr_file.currentText()
+        output_format = self.output_format.currentText()
+        subtitle_font = self.subtitle_font_combo.currentText()
+        output_dir = self.output_dir_edit.text().strip() or self.default_output_dir()
+        use_input_dir = self.use_input_dir_checkbox.isChecked()
+        output_dir = os.path.abspath(os.path.expanduser(output_dir))
+        os.makedirs(output_dir, exist_ok=True)
+        enable_segment = self.enable_segment_checkbox.isChecked()
+        segment_duration = self.segment_duration_spin.value()
+        change_prompt_mode = self.change_prompt_mode.currentText() if hasattr(self, 'change_prompt_mode') else '不修改'
+        auto_shutdown = self.auto_shutdown_checkbox.isChecked() if hasattr(self, 'auto_shutdown_checkbox') else False
+        target_translation_lang = self.target_lang.currentData() if hasattr(self, 'target_lang') else 'zh-cn'
+        current_lang = get_language()
+
+        gui_settings = {
+            'whisper_file': whisper_file,
+            'translator': translator,
+            'language': language,
+            'gpt_address': gpt_address,
+            'gpt_model': gpt_model,
+            'sakura_file': sakura_file,
+            'sakura_mode': sakura_mode,
+            'proxy_address': proxy_address,
+            'uvr_file': uvr_file,
+            'output_format': output_format,
+            'subtitle_font': subtitle_font,
+            'output_dir': output_dir,
+            'use_input_dir': use_input_dir,
+            'max_concurrent': self.max_concurrent_spin.value(),
+            'enable_segment': enable_segment,
+            'segment_duration': segment_duration,
+            'change_prompt_mode': change_prompt_mode,
+            'log_level_filter': self.log_filter_combo.currentText(),
+            'verbose_mode': self.verbose_checkbox.isChecked(),
+        }
+        with open('gui_settings.yaml', 'w', encoding='utf-8') as f:
+            yaml.dump(gui_settings, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+        _save_api_key(gpt_token)
+
+        with open('whisper/param.txt', 'w', encoding='utf-8') as f:
+            f.write(self.param_whisper.toPlainText())
+
+        with open('llama/param.txt', 'w', encoding='utf-8') as f:
+            f.write(self.param_llama.toPlainText())
+
+        with open('project/dict_pre.txt', 'w', encoding='utf-8') as f:
+            f.write(self.before_dict.toPlainText())
+
+        with open('project/dict_gpt.txt', 'w', encoding='utf-8') as f:
+            f.write(self.gpt_dict.toPlainText())
+
+        with open('project/dict_after.txt', 'w', encoding='utf-8') as f:
+            f.write(self.after_dict.toPlainText())
+
+        if not silent:
+            self._emit_status("[INFO] 配置保存完成！")
+
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.FocusOut:
+            self._schedule_auto_save()
+        return super().eventFilter(obj, event)
+
+    def _on_config_changed(self, *args):
+        """控件值变更时的防抖处理"""
+        if not self._suppress_auto_save:
+            self._schedule_auto_save()
+
+    def _install_auto_save_signals(self):
+        """为可编辑控件连接值变更信号"""
+        for widget in self.findChildren(QWidget):
+            if isinstance(widget, QLineEdit):
+                widget.editingFinished.connect(self._schedule_auto_save)
+            elif isinstance(widget, QComboBox):
+                widget.currentTextChanged.connect(self._on_config_changed)
+            elif isinstance(widget, QSpinBox):
+                widget.valueChanged.connect(self._on_config_changed)
+            elif isinstance(widget, QCheckBox):
+                widget.stateChanged.connect(self._on_config_changed)
+            elif isinstance(widget, QTextEdit):
+                widget.installEventFilter(self)
+
     def initUI(self):
         self.initAboutTab()
         self.initInputOutputTab()
@@ -828,6 +940,7 @@ class MainWindow(QMainWindow):
         self.initAdvancedSettingTab()
         self.initDictTab()
         self.initLogTab()
+        self._install_auto_save_signals()
         self.load_config()
 
     def browse_synth_video(self):
@@ -1019,6 +1132,7 @@ class MainWindow(QMainWindow):
 
     def load_config(self):
         """加载 GUI 配置（优先 gui_settings.yaml，兼容旧 config.txt 自动迁移）"""
+        self._suppress_auto_save = True
         gui_settings = {}
 
         if os.path.exists('gui_settings.yaml'):
@@ -1118,6 +1232,8 @@ class MainWindow(QMainWindow):
                     self.extra_prompt.setPlainText(prompt_content)
         except Exception:
             pass
+        finally:
+            self._suppress_auto_save = False
 
     def setup_timer(self):
         self.timer = QTimer(self)
@@ -1185,6 +1301,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """确保在关闭窗口时停止定时器并关闭子进程，检查本地模型是否已关闭"""
+        try:
+            self.save_config(silent=True)
+        except Exception:
+            pass
         self.timer.stop()
         self.shutdown_children()
 
@@ -1240,6 +1360,9 @@ class MainWindow(QMainWindow):
             if getattr(self, 'tray_icon', None):
                 QTimer.singleShot(0, self.hide)
                 self.tray_icon.showMessage("VoiceTransl", _("tray_minimized"), QSystemTrayIcon.Information, 2000)
+
+        if event.type() == QtCore.QEvent.ActivationChange and not self.isActiveWindow():
+            self._schedule_auto_save()
 
     def initLogTab(self):
         self.log_tab = Widget("Log", self)
@@ -1990,81 +2113,8 @@ class MainWorker(QObject):
             except Exception as e:
                 self.status.emit(f"[ERROR] 自动关机失败: {e}")
 
-    @error_handler
-    def save_config(self):
-        self._emit_status("[INFO] 正在读取配置...")
-        whisper_file = self.master.whisper_file.currentText()
-        translator = self.master.translator_group.currentText()
-        language = self.master.input_lang.currentText()
-        gpt_token = self.master.gpt_token.text()
-        gpt_address = self.master.gpt_address.text()
-        gpt_model = self.master.gpt_model.text()
-        sakura_file = self.master.sakura_file.currentText()
-        sakura_mode = self.master.sakura_mode.text()
-        proxy_address = self.master.proxy_address.text()
-        uvr_file = self.master.uvr_file.currentText()
-        output_format = self.master.output_format.currentText()
-        subtitle_font = self.master.subtitle_font_combo.currentText()
-        output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
-        use_input_dir = self.master.use_input_dir_checkbox.isChecked()
-        output_dir = os.path.abspath(os.path.expanduser(output_dir))
-        os.makedirs(output_dir, exist_ok=True)
-        enable_segment = self.master.enable_segment_checkbox.isChecked()
-        segment_duration = self.master.segment_duration_spin.value()
-        change_prompt_mode = self.master.change_prompt_mode.currentText() if hasattr(self.master, 'change_prompt_mode') else '不修改'
-        auto_shutdown = self.master.auto_shutdown_checkbox.isChecked() if hasattr(self.master, 'auto_shutdown_checkbox') else False
-        target_translation_lang = self.master.target_lang.currentData() if hasattr(self.master, 'target_lang') else 'zh-cn'
-        current_lang = get_language()
-
-        # save GUI settings to YAML（不包含 API Key）
-        gui_settings = {
-            'whisper_file': whisper_file,
-            'translator': translator,
-            'language': language,
-            'gpt_address': gpt_address,
-            'gpt_model': gpt_model,
-            'sakura_file': sakura_file,
-            'sakura_mode': sakura_mode,
-            'proxy_address': proxy_address,
-            'uvr_file': uvr_file,
-            'output_format': output_format,
-            'subtitle_font': subtitle_font,
-            'output_dir': output_dir,
-            'use_input_dir': use_input_dir,
-            'max_concurrent': self.master.max_concurrent_spin.value(),
-            'enable_segment': enable_segment,
-            'segment_duration': segment_duration,
-            'change_prompt_mode': change_prompt_mode,
-            'log_level_filter': self.master.log_filter_combo.currentText(),
-            'verbose_mode': self.master.verbose_checkbox.isChecked(),
-        }
-        with open('gui_settings.yaml', 'w', encoding='utf-8') as f:
-            yaml.dump(gui_settings, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
-
-        # save API Key 到 .env
-        _save_api_key(gpt_token)
-
-        # save whisper param
-        with open('whisper/param.txt', 'w', encoding='utf-8') as f:
-            f.write(self.master.param_whisper.toPlainText())
-
-        # save llama param
-        with open('llama/param.txt', 'w', encoding='utf-8') as f:
-            f.write(self.master.param_llama.toPlainText())
-
-        # save before dict
-        with open('project/dict_pre.txt', 'w', encoding='utf-8') as f:
-            f.write(self.master.before_dict.toPlainText())
-
-        # save gpt dict
-        with open('project/dict_gpt.txt', 'w', encoding='utf-8') as f:
-            f.write(self.master.gpt_dict.toPlainText())
-
-        # save after dict
-        with open('project/dict_after.txt', 'w', encoding='utf-8') as f:
-            f.write(self.master.after_dict.toPlainText())
-
-        self._emit_status("[INFO] 配置保存完成！")
+    def save_config(self, silent: bool = False):
+        self.master.save_config(silent)
 
     @error_handler
     def update_translation_config(self):
