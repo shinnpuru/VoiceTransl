@@ -53,6 +53,12 @@ TRANSLATIONS = {
         "io_browse_dir_btn": "📂 选择目录",
         "io_use_input_dir_checkbox": "输出到音频目录（每个文件输出到其所在目录）",
         "io_format_label": "🎥 选择输出的字幕格式。",
+        "format_original_srt": "原文SRT",
+        "format_original_lrc": "原文LRC",
+        "format_target_srt": "目标SRT",
+        "format_target_lrc": "目标LRC",
+        "format_bilingual_srt": "双语SRT",
+        "format_bilingual_lrc": "双语LRC",
         "io_segment_checkbox": "启用音频分段处理（长音频分段后听写翻译再合并）",
         "io_segment_duration_label": "分段时长（分钟）：",
         "io_run_btn": "🚀 运行",
@@ -60,8 +66,8 @@ TRANSLATIONS = {
         "io_open_output_btn": "📁 打开输出目录",
         "io_clean_btn": "🧹 清空下载和缓存",
         "io_auto_shutdown_checkbox": "任务完成后自动关机",
-        "io_transcription_lang_label": "🎤 听写语言 (Transcription Language)",
-        "io_target_lang_label": "🌐 翻译目标语言 (Target Translation Language)",
+        "io_transcription_lang_label": "🎤 听写语言",
+        "io_target_lang_label": "🌐 翻译目标语言",
         "target_lang_zh_cn": "简体中文(zh-cn)",
         "target_lang_zh_tw": "繁體中文(zh-tw)",
         "target_lang_en": "English(en)",
@@ -73,18 +79,21 @@ TRANSLATIONS = {
 
         # === Dict Tab ===
         "dict_before_label": "📚 配置翻译前的字典。",
-        "dict_before_placeholder": "日文原文(Tab键)日文替换词\n日文原文(Tab键)日文替换词",
+        "dict_before_placeholder": "原文(Tab键)替换词\n原文(Tab键)替换词",
         "dict_gpt_label": "📚 配置翻译中的字典。",
-        "dict_gpt_placeholder": "日文(Tab键)中文\n日文(Tab键)中文",
+        "dict_gpt_placeholder": "原文(Tab键)目标译文\n原文(Tab键)目标译文",
         "dict_after_label": "📚 配置翻译后的字典。",
-        "dict_after_placeholder": "中文原文(Tab键)中文替换词\n中文原文(Tab键)中文替换词",
+        "dict_after_placeholder": "目标原文(Tab键)目标替换词\n目标原文(Tab键)目标替换词",
         "dict_extra_label": "📕 配置额外提示。",
         "dict_extra_placeholder": "请在这里输入额外的提示信息，例如世界书或台本内容。",
         "dict_prompt_mode_label": "📝 额外提示模式（选择如何处理额外提示）",
+        "dict_prompt_mode_no": "不修改",
+        "dict_prompt_mode_append": "追加",
+        "dict_prompt_mode_overwrite": "覆盖",
 
         # === Settings Tab (Speech) ===
         "settings_whisper_label": "🗣️ 选择用于语音识别的模型文件。",
-        "settings_lang_label": "🌍 选择输入的语言。(ja=日语，en=英语，ko=韩语，ru=俄语，fr=法语，zh=中文，仅听写）",
+        "settings_lang_label": "🌍 选择输入的语言。(ja=日语，en=英语，ko=韩语，ru=俄语，fr=法语，zh=中文）",
         "settings_whisper_param_label": "🔧 输入Whisper命令行参数。(CPU，A卡，I卡，Mac，Linux)",
         "settings_whisper_param_placeholder": "每个参数空格隔开，请参考Whisper.cpp文档，不清楚请保持默认。",
         "settings_faster_param_label": "🔧 输入Whisper-Faster命令行参数。(N卡)",
@@ -133,6 +142,8 @@ TRANSLATIONS = {
         "synth_browse_srt_btn": "📂 浏览字幕",
         "synth_srt_placeholder": "拖拽字幕文件到此处，或点击浏览按钮选择。字幕文件需要和视频文件一一对应。",
         "synth_subtitle_type_label": "字幕类型",
+        "synth_sub_hard": "硬字幕",
+        "synth_sub_soft": "软字幕",
         "synth_font_label": "字体选择",
         "synth_run_btn": "🚀 字幕合成",
         "synth_audio_label": "🎵 音频合成工具",
@@ -236,6 +247,7 @@ TRANSLATIONS = {
         "status_duplicate_proc": "[WARN] 检测到进程 {name} 已在运行，跳过重复启动。",
         "status_vocal_split_label": "[INFO] 正在进行伴奏分离...第{idx}个，共{total}个",
         "status_vocal_processing_done": "[INFO] 文件处理完成！",
+        "status_processing_done": "[INFO] 文件处理完成！",
         "status_uvr_model_error": "[ERROR] 请选择正确的UVR模型文件！",
         "status_file_not_exist": "[ERROR] {file}文件不存在，请重新选择文件！",
         "status_synth_mismatch": "[ERROR] 字幕文件和视频文件数量不匹配，请重新选择文件！",
@@ -256,6 +268,22 @@ TRANSLATIONS = {
         "status_auto_shutdown": "[INFO] 任务完成，正在执行自动关机...",
         "status_auto_shutdown_error": "[ERROR] 自动关机失败: {error}",
         "status_local_model_closed": "[INFO] 本地模型进程已关闭",
+        "status_generic_error": "[ERROR] {error}",
+
+        # === Language Change Notification ===
+        "notify_lang_changed_title": "界面语言已更改",
+        "notify_lang_changed_msg": "重启程序后生效",
+        "status_lang_changed": "[INFO] 界面语言已更改为{lang}，重启程序后生效。",
+
+        # === Log Tab (Additional) ===
+        "log_filter_label": "日志级别过滤:",
+        "log_verbose_checkbox": "详细模式（显示 GalTransl 逐行翻译记录）",
+        "log_verbose_tooltip": "启用后子进程将输出完整日志，适合开发调试。需在启动翻译前切换。",
+
+        # === Additional Status Messages ===
+        "status_first_run_init": "[INFO] 首次运行，正在初始化项目配置文件...",
+        "status_worker_not_exited": "[WARN] 翻译工作线程 {name} 未能在停止信号后退出",
+        "status_translate_proc_ended": "[INFO] [进程{idx}] 翻译进程已结束 (exit={retcode})",
     },
     "en": {
         # === Window & Tray ===
@@ -309,6 +337,12 @@ TRANSLATIONS = {
         "io_browse_dir_btn": "📂 Browse Directory",
         "io_use_input_dir_checkbox": "Output to audio directory (each file outputs to its own directory)",
         "io_format_label": "🎥 Select output subtitle format.",
+        "format_original_srt": "Original SRT",
+        "format_original_lrc": "Original LRC",
+        "format_target_srt": "Target SRT",
+        "format_target_lrc": "Target LRC",
+        "format_bilingual_srt": "Bilingual SRT",
+        "format_bilingual_lrc": "Bilingual LRC",
         "io_segment_checkbox": "Enable audio segment processing (split long audio for transcription/translation then merge)",
         "io_segment_duration_label": "Segment duration (minutes):",
         "io_run_btn": "🚀 Run",
@@ -329,18 +363,21 @@ TRANSLATIONS = {
 
         # === Dict Tab ===
         "dict_before_label": "📚 Configure pre-translation dictionary.",
-        "dict_before_placeholder": "Japanese source(Tab)Japanese replacement\nJapanese source(Tab)Japanese replacement",
+        "dict_before_placeholder": "Source(Tab)Replacement\nSource(Tab)Replacement",
         "dict_gpt_label": "📚 Configure mid-translation dictionary.",
-        "dict_gpt_placeholder": "Japanese(Tab)Chinese\nJapanese(Tab)Chinese",
+        "dict_gpt_placeholder": "Source(Tab)Target\nSource(Tab)Target",
         "dict_after_label": "📚 Configure post-translation dictionary.",
-        "dict_after_placeholder": "Chinese source(Tab)Chinese replacement\nChinese source(Tab)Chinese replacement",
+        "dict_after_placeholder": "Target source(Tab)Target replacement\nTarget source(Tab)Target replacement",
         "dict_extra_label": "📕 Configure extra prompt.",
         "dict_extra_placeholder": "Enter additional prompt info here, such as world book or script content.",
         "dict_prompt_mode_label": "📝 Extra prompt mode (choose how to handle extra prompts)",
+        "dict_prompt_mode_no": "Do not modify",
+        "dict_prompt_mode_append": "Append",
+        "dict_prompt_mode_overwrite": "Overwrite",
 
         # === Settings Tab (Speech) ===
         "settings_whisper_label": "🗣️ Select model file for speech recognition.",
-        "settings_lang_label": "🌍 Select input language. (ja=Japanese, en=English, ko=Korean, ru=Russian, fr=French, zh=Chinese, transcription only)",
+        "settings_lang_label": "🌍 Select input language. (ja=Japanese, en=English, ko=Korean, ru=Russian, fr=French, zh=Chinese)",
         "settings_whisper_param_label": "🔧 Enter Whisper command line parameters. (CPU, AMD GPU, Intel GPU, Mac, Linux)",
         "settings_whisper_param_placeholder": "Space-separated parameters, see Whisper.cpp docs. Leave default if unsure.",
         "settings_faster_param_label": "🔧 Enter Whisper-Faster command line parameters. (NVIDIA GPU)",
@@ -389,6 +426,8 @@ TRANSLATIONS = {
         "synth_browse_srt_btn": "📂 Browse Subtitles",
         "synth_srt_placeholder": "Drag subtitle files here or click Browse to select. Subtitle files must correspond one-to-one with video files.",
         "synth_subtitle_type_label": "Subtitle Type",
+        "synth_sub_hard": "Hard Subtitle",
+        "synth_sub_soft": "Soft Subtitle",
         "synth_font_label": "Font Selection",
         "synth_run_btn": "🚀 Synthesize Subtitles",
         "synth_audio_label": "🎵 Audio Synthesis Tool",
@@ -492,6 +531,7 @@ TRANSLATIONS = {
         "status_duplicate_proc": "[WARN] Process {name} is already running, skipping duplicate start.",
         "status_vocal_split_label": "[INFO] Performing accompaniment separation... ({idx}/{total})",
         "status_vocal_processing_done": "[INFO] File processing complete!",
+        "status_processing_done": "[INFO] File processing complete!",
         "status_uvr_model_error": "[ERROR] Please select a valid UVR model file!",
         "status_file_not_exist": "[ERROR] File {file} does not exist, please re-select!",
         "status_synth_mismatch": "[ERROR] Subtitle and video file counts do not match, please re-select!",
@@ -512,6 +552,22 @@ TRANSLATIONS = {
         "status_auto_shutdown": "[INFO] Task complete, executing auto shutdown...",
         "status_auto_shutdown_error": "[ERROR] Auto shutdown failed: {error}",
         "status_local_model_closed": "[INFO] Local model process closed",
+        "status_generic_error": "[ERROR] {error}",
+
+        # === Language Change Notification ===
+        "notify_lang_changed_title": "UI Language Changed",
+        "notify_lang_changed_msg": "Restart to take effect",
+        "status_lang_changed": "[INFO] UI language changed to {lang}. Restart to take effect.",
+
+        # === Log Tab (Additional) ===
+        "log_filter_label": "Log Level Filter:",
+        "log_verbose_checkbox": "Verbose mode (show GalTransl line-by-line translation log)",
+        "log_verbose_tooltip": "When enabled, subprocess outputs full logs, suitable for debugging. Switch before starting translation.",
+
+        # === Additional Status Messages ===
+        "status_first_run_init": "[INFO] First run, initializing project config file...",
+        "status_worker_not_exited": "[WARN] Translation worker thread {name} did not exit after stop signal",
+        "status_translate_proc_ended": "[INFO] [Worker {idx}] Translation process ended (exit={retcode})",
     },
     "ja": {
         # === Window & Tray ===
@@ -551,7 +607,7 @@ TRANSLATIONS = {
         "about_wiki_btn": "📖 ガイドと更新履歴を見る",
         "about_sponsor_title": "🎇 昕蒲をサポート",
         "about_afdian_btn": "⚡ Afdian（WeChat & Alipay）",
-        "about_bilibili_btn": "⚡ Bilibili（無料Bコイン）",
+        "about_bilibili_btn": "⚡ Bilibili（大会員無料ポイント）",
         "about_kofi_btn": "⚡ Ko-fi（PayPal & クレジットカード）",
         "about_start_btn": "🚀 開始",
 
@@ -564,6 +620,12 @@ TRANSLATIONS = {
         "io_browse_dir_btn": "📂 ディレクトリを参照",
         "io_use_input_dir_checkbox": "音声ディレクトリに出力（各ファイルをそのディレクトリに出力）",
         "io_format_label": "🎥 出力字幕形式を選択。",
+        "format_original_srt": "原文SRT",
+        "format_original_lrc": "原文LRC",
+        "format_target_srt": "ターゲットSRT",
+        "format_target_lrc": "ターゲットLRC",
+        "format_bilingual_srt": "二言語SRT",
+        "format_bilingual_lrc": "二言語LRC",
         "io_segment_checkbox": "音声セグメント処理を有効化（長い音声を分割して文字起こし・翻訳後に結合）",
         "io_segment_duration_label": "セグメント長（分）：",
         "io_run_btn": "🚀 実行",
@@ -571,8 +633,8 @@ TRANSLATIONS = {
         "io_open_output_btn": "📁 出力ディレクトリを開く",
         "io_clean_btn": "🧹 ダウンロードとキャッシュを削除",
         "io_auto_shutdown_checkbox": "タスク完了後に自動シャットダウン",
-        "io_transcription_lang_label": "🎤 文字起こし言語 (Transcription Language)",
-        "io_target_lang_label": "🌐 翻訳対象言語 (Target Translation Language)",
+        "io_transcription_lang_label": "🎤 文字起こし言語",
+        "io_target_lang_label": "🌐 翻訳対象言語",
         "target_lang_zh_cn": "简体中文(zh-cn)",
         "target_lang_zh_tw": "繁體中文(zh-tw)",
         "target_lang_en": "English(en)",
@@ -584,18 +646,21 @@ TRANSLATIONS = {
 
         # === Dict Tab ===
         "dict_before_label": "📚 翻訳前の辞書を設定。",
-        "dict_before_placeholder": "日本語原文(Tab)日本語置換語\n日本語原文(Tab)日本語置換語",
+        "dict_before_placeholder": "原文(Tab)置換語\n原文(Tab)置換語",
         "dict_gpt_label": "📚 翻訳中の辞書を設定。",
-        "dict_gpt_placeholder": "日本語(Tab)中国語\n日本語(Tab)中国語",
+        "dict_gpt_placeholder": "原文(Tab)ターゲット訳文\n原文(Tab)ターゲット訳文",
         "dict_after_label": "📚 翻訳後の辞書を設定。",
-        "dict_after_placeholder": "中国語原文(Tab)中国語置換語\n中国語原文(Tab)中国語置換語",
+        "dict_after_placeholder": "ターゲット原文(Tab)ターゲット置換語\nターゲット原文(Tab)ターゲット置換語",
         "dict_extra_label": "📕 追加プロンプトを設定。",
         "dict_extra_placeholder": "追加のプロンプト情報をここに入力してください（世界観設定や台本内容など）。",
         "dict_prompt_mode_label": "📝 追加プロンプトモード（追加プロンプトの処理方法を選択）",
+        "dict_prompt_mode_no": "変更しない",
+        "dict_prompt_mode_append": "追記",
+        "dict_prompt_mode_overwrite": "上書き",
 
         # === Settings Tab (Speech) ===
         "settings_whisper_label": "🗣️ 音声認識用のモデルファイルを選択。",
-        "settings_lang_label": "🌍 入力言語を選択。（ja=日本語、en=英語、ko=韓国語、ru=ロシア語、fr=フランス語、zh=中国語、文字起こしのみ）",
+        "settings_lang_label": "🌍 入力言語を選択。（ja=日本語、en=英語、ko=韓国語、ru=ロシア語、fr=フランス語、zh=中国語）",
         "settings_whisper_param_label": "🔧 Whisperコマンドラインパラメータを入力。（CPU、AMD GPU、Intel GPU、Mac、Linux）",
         "settings_whisper_param_placeholder": "スペース区切りのパラメータ。Whisper.cppドキュメントを参照。不明な場合はデフォルトのまま。",
         "settings_faster_param_label": "🔧 Whisper-Fasterコマンドラインパラメータを入力。（NVIDIA GPU）",
@@ -644,6 +709,8 @@ TRANSLATIONS = {
         "synth_browse_srt_btn": "📂 字幕を参照",
         "synth_srt_placeholder": "字幕ファイルをここにドラッグするか、参照ボタンをクリックして選択。字幕ファイルは動画ファイルと1対1で対応する必要があります。",
         "synth_subtitle_type_label": "字幕タイプ",
+        "synth_sub_hard": "焼き字幕",
+        "synth_sub_soft": "ソフト字幕",
         "synth_font_label": "フォント選択",
         "synth_run_btn": "🚀 字幕合成",
         "synth_audio_label": "🎵 音声合成ツール",
@@ -747,6 +814,7 @@ TRANSLATIONS = {
         "status_duplicate_proc": "[WARN] プロセス {name} は既に実行中です。重複起動をスキップ。",
         "status_vocal_split_label": "[INFO] 伴奏分離を実行中...（{idx}/{total}）",
         "status_vocal_processing_done": "[INFO] ファイル処理完了！",
+        "status_processing_done": "[INFO] ファイル処理完了！",
         "status_uvr_model_error": "[ERROR] 有効なUVRモデルファイルを選択してください！",
         "status_file_not_exist": "[ERROR] ファイル {file} が存在しません。再選択してください！",
         "status_synth_mismatch": "[ERROR] 字幕ファイルと動画ファイルの数が一致しません。再選択してください！",
@@ -767,6 +835,22 @@ TRANSLATIONS = {
         "status_auto_shutdown": "[INFO] タスク完了、自動シャットダウンを実行中...",
         "status_auto_shutdown_error": "[ERROR] 自動シャットダウンに失敗: {error}",
         "status_local_model_closed": "[INFO] ローカルモデルプロセスを終了しました",
+        "status_generic_error": "[ERROR] {error}",
+
+        # === Language Change Notification ===
+        "notify_lang_changed_title": "UI言語が変更されました",
+        "notify_lang_changed_msg": "再起動後に反映されます",
+        "status_lang_changed": "[INFO] UI言語が{lang}に変更されました。再起動後に反映されます。",
+
+        # === Log Tab (Additional) ===
+        "log_filter_label": "ログレベルフィルタ:",
+        "log_verbose_checkbox": "詳細モード（GalTranslの行ごとの翻訳記録を表示）",
+        "log_verbose_tooltip": "有効にするとサブプロセスが完全なログを出力します。デバッグに適しています。翻訳開始前に切り替えてください。",
+
+        # === Additional Status Messages ===
+        "status_first_run_init": "[INFO] 初回実行、プロジェクト設定ファイルを初期化中...",
+        "status_worker_not_exited": "[WARN] 翻訳ワーカースレッド {name} が停止信号後に終了しませんでした",
+        "status_translate_proc_ended": "[INFO] [ワーカー{idx}] 翻訳プロセスが終了しました (exit={retcode})",
     },
 }
 
