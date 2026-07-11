@@ -113,8 +113,11 @@ class UIMessageQueue:
         cleaned = _strip_ansi(text)
         if cleaned.strip():
             with self._file_lock:
-                with open(self._log_path, 'a', encoding='GBK') as f:
-                    f.write(cleaned + '\n')
+                try:
+                    with open(self._log_path, 'a', encoding='GBK', errors='replace') as f:
+                        f.write(cleaned + '\n')
+                except Exception:
+                    pass
 
         # 放入队列
         entry = (target, text)
@@ -209,6 +212,44 @@ def _clean_control_chars(text: str) -> str:
     # 清理进度条碎片前缀：三个小写字母/数字 + 竖线（如 yg2|、a0n|、23b|）
     text = re.sub(r'^[a-z0-9]{3}\|', '', text)
     return text
+
+
+def _decode_subprocess_line(data: bytes) -> str:
+    """按 UTF-8→GBK→latin-1 顺序尝试解码子进程输出字节。"""
+    for enc in ('utf-8', 'gbk', 'latin-1'):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode('utf-8', errors='replace')
+
+
+def _stream_proc_to_queue(proc, msg_queue, label=None):
+    """后台线程目标：将子进程 stdout/stderr 流式转发到统一消息队列（target='detail'）。
+
+    读取二进制并解码、剥离 ANSI/控制字符后入队（同时写入日志文件）。
+    进程结束后自动关闭管道。
+    """
+    stream = proc.stdout
+    if stream is None:
+        return
+    prefix = f"[{label}] " if label else ""
+    try:
+        for raw in iter(stream.readline, b''):
+            if not raw:
+                break
+            line = _decode_subprocess_line(raw)
+            line = _clean_control_chars(_strip_ansi(line.rstrip('\n\r')))
+            if line.strip():
+                msg_queue.put("detail", prefix + line)
+    except Exception:
+        pass
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
 
 # GalTransl 逐行翻译输出解析器：将三行格式转换为 JSON，并按批次分组
 # 原始格式:  v--{id}[-{speaker}]\n> Src: {text}\n> Dst: {text}
@@ -719,9 +760,18 @@ class ConcurrentTranslationPool:
 
         try:
             creationflags = 0x08000000 if os.name == 'nt' else 0
-            proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stdout, creationflags=creationflags)
-
             expected_model = str(Path(sakura_file).name)
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                creationflags=creationflags,
+            )
+            threading.Thread(
+                target=_stream_proc_to_queue,
+                args=(proc, self._msg_queue, expected_model),
+                daemon=True,
+            ).start()
+
             start_wait = time()
 
             while not self._stop_event.is_set():
@@ -2278,6 +2328,7 @@ class MainWorker(QObject):
         self.msg_queue = master.msg_queue
         self.child_processes = []
         self._child_processes_lock = threading.Lock()
+        self._proc_readers = {}
         self._stop_requested = False
         self._stop_event = asyncio.Event()
 
@@ -2286,11 +2337,22 @@ class MainWorker(QObject):
         self.msg_queue.put("status", msg)
         self.status.emit(msg)
 
-    def _start_process(self, args):
+    def _start_process(self, args, label=None):
         creationflags = 0x08000000 if os.name == 'nt' else 0
-        proc = subprocess.Popen(args, stdout=sys.stdout, stderr=sys.stdout, creationflags=creationflags)
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            creationflags=creationflags,
+        )
+        reader = threading.Thread(
+            target=_stream_proc_to_queue,
+            args=(proc, self.msg_queue, label),
+            daemon=True,
+        )
         with self._child_processes_lock:
             self.child_processes.append(proc)
+            self._proc_readers[proc] = reader
+        reader.start()
         self.pid = proc
         return proc
 
@@ -2307,9 +2369,13 @@ class MainWorker(QObject):
             except Exception:
                 pass
         finally:
+            reader = None
             with self._child_processes_lock:
                 if proc in self.child_processes:
                     self.child_processes.remove(proc)
+                reader = self._proc_readers.pop(proc, None)
+            if reader is not None:
+                reader.join(timeout=2)
 
     def _terminate_all_children(self):
         with self._child_processes_lock:
@@ -2736,7 +2802,7 @@ class MainWorker(QObject):
                     self.finished.emit()
 
                 self._emit_status(_("status_processing_file", file=audio_input, idx=idx+1, total=len(image_files)))
-                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'])
+                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'], label='ffmpeg')
                 proc.wait()
                 self._cleanup_process(proc)
                 self._emit_status(_("status_synth_done"))
@@ -3013,7 +3079,7 @@ class MainWorker(QObject):
                     self._cleanup_process(existing)
                     running_procs.pop(proc_name, None)
 
-                new_proc = self._start_process(args)
+                new_proc = self._start_process(args, label=proc_name)
                 running_procs[proc_name] = new_proc
                 return new_proc, False
 
