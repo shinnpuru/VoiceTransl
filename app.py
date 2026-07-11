@@ -65,7 +65,7 @@ TRANSLATOR_SUPPORTED = [
 
 # redirect sys.stdout and sys.stderr to one log file
 LOG_PATH = 'log.txt'
-sys.stdout = open(LOG_PATH, 'w', encoding='utf-8')
+sys.stdout = open(LOG_PATH, 'w', encoding='GBK')
 sys.stderr = sys.stdout
 
 # ANSI 转义序列正则（覆盖 CSI、OSC、前景/背景色等）
@@ -106,7 +106,7 @@ class UIMessageQueue:
         cleaned = _strip_ansi(text)
         if cleaned.strip():
             with self._file_lock:
-                with open(self._log_path, 'a', encoding='utf-8') as f:
+                with open(self._log_path, 'a', encoding='GBK') as f:
                     f.write(cleaned + '\n')
 
         # 放入队列
@@ -1485,29 +1485,24 @@ class MainWindow(QMainWindow):
         self.lang_selector.currentIndexChanged.connect(self._on_language_changed)
         lang_layout.addWidget(self.lang_selector)
         lang_layout.addStretch()
-        self.input_output_layout.addLayout(lang_layout)
 
         # Transcription Language
-        trans_lang_layout = QHBoxLayout()
         self.io_transcription_lang_label = BodyLabel(_("io_transcription_lang_label"))
-        trans_lang_layout.addWidget(self.io_transcription_lang_label)
+        lang_layout.addWidget(self.io_transcription_lang_label)
         self.transcription_lang = QComboBox()
         self.transcription_lang.addItems(['ja', 'en', 'ko', 'ru', 'fr', 'zh'])
-        trans_lang_layout.addWidget(self.transcription_lang)
-        trans_lang_layout.addStretch()
-        self.input_output_layout.addLayout(trans_lang_layout)
+        lang_layout.addWidget(self.transcription_lang)
+        lang_layout.addStretch()
 
         # Target Translation Language
-        target_lang_layout = QHBoxLayout()
         self.io_target_lang_label = BodyLabel(_("io_target_lang_label"))
-        target_lang_layout.addWidget(self.io_target_lang_label)
+        lang_layout.addWidget(self.io_target_lang_label)
         self.target_lang = QComboBox()
         TARGET_LANG_CODES = ['zh-cn', 'zh-tw', 'en', 'ja', 'ko', 'ru', 'fr']
         for code in TARGET_LANG_CODES:
             self.target_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), code)
-        target_lang_layout.addWidget(self.target_lang)
-        target_lang_layout.addStretch()
-        self.input_output_layout.addLayout(target_lang_layout)
+        lang_layout.addWidget(self.target_lang)
+        self.input_output_layout.addLayout(lang_layout)
 
         # Input Section (local files or URLs)
         self.io_input_label = BodyLabel(_("io_input_label"))
@@ -1538,10 +1533,16 @@ class MainWindow(QMainWindow):
         output_dir_layout.addWidget(self.output_dir_button)
         self.input_output_layout.addLayout(output_dir_layout)
 
+        selection_layout = QHBoxLayout()
         self.use_input_dir_checkbox = QCheckBox(_("io_use_input_dir_checkbox"))
         self.use_input_dir_checkbox.stateChanged.connect(self.update_output_dir_controls)
-        self.input_output_layout.addWidget(self.use_input_dir_checkbox)
-
+        selection_layout.addWidget(self.use_input_dir_checkbox)
+        selection_layout.addStretch()
+        self.auto_shutdown_checkbox = QCheckBox(_("io_auto_shutdown_checkbox"))
+        selection_layout.addWidget(self.auto_shutdown_checkbox)
+        selection_layout.addStretch()
+        self.input_output_layout.addLayout(selection_layout)
+        
         # Format Section
         self.io_format_label = BodyLabel(_("io_format_label"))
         self.input_output_layout.addWidget(self.io_format_label)
@@ -1584,10 +1585,6 @@ class MainWindow(QMainWindow):
 
         # Add the button row layout to the input output layout
         self.input_output_layout.addLayout(button_layout)
-
-        # Auto shutdown checkbox
-        self.auto_shutdown_checkbox = QCheckBox(_("io_auto_shutdown_checkbox"))
-        self.input_output_layout.addWidget(self.auto_shutdown_checkbox)
 
         self.addSubInterface(self.input_output_tab, FluentIcon.HOME, _("tab_input_output"), NavigationItemPosition.TOP)
 
