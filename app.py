@@ -946,6 +946,7 @@ class MainWindow(QMainWindow):
             'log_level_filter': self.log_filter_combo.currentText(),
             'verbose_mode': self.verbose_checkbox.isChecked(),
             'ui_language': current_lang,
+            'target_translation_lang': target_translation_lang,
         }
         with open('gui_settings.yaml', 'w', encoding='utf-8') as f:
             yaml.dump(gui_settings, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
@@ -1247,6 +1248,10 @@ class MainWindow(QMainWindow):
                 self._log_level_filter = log_filter
             if hasattr(self, 'verbose_checkbox'):
                 self.verbose_checkbox.setChecked(gui_settings.get('verbose_mode', False))
+            if hasattr(self, 'target_lang'):
+                _tl_idx = self.target_lang.findData(gui_settings.get('target_translation_lang', 'zh-cn'))
+                if _tl_idx >= 0:
+                    self.target_lang.setCurrentIndex(_tl_idx)
 
         # API Key 始终从 .env 加载
         api_key = _load_api_key()
@@ -1581,7 +1586,9 @@ class MainWindow(QMainWindow):
         self.io_transcription_lang_label = BodyLabel(_("io_transcription_lang_label"))
         lang_layout.addWidget(self.io_transcription_lang_label)
         self.transcription_lang = QComboBox()
-        self.transcription_lang.addItems(['ja', 'en', 'ko', 'ru', 'fr', 'zh'])
+        TRANS_LANG_CODES = ['ja', 'en', 'ko', 'ru', 'fr', 'zh']
+        for code in TRANS_LANG_CODES:
+            self.transcription_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), userData=code)
         lang_layout.addWidget(self.transcription_lang)
         lang_layout.addStretch()
 
@@ -2271,7 +2278,10 @@ class MainWorker(QObject):
         if 'common' not in cfg:
             cfg['common'] = {}
         target_lang = self.master.target_lang.currentData() if hasattr(self.master, 'target_lang') else 'zh-cn'
-        cfg['common']['language'] = target_lang
+        source_lang = self.master.input_lang.currentText() if hasattr(self.master, 'input_lang') else 'ja'
+        if source_lang == 'zh':
+            source_lang = 'zh-cn'
+        cfg['common']['language'] = f"{source_lang}2{target_lang}"
 
         # Update backendSpecific configuration
         if 'backendSpecific' not in cfg:
