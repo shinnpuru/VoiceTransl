@@ -1,1 +1,0 @@
-Whisper-Faster/whisper-faster.exe --beep_off --verbose True --model $whisper_file --model_dir Whisper-Faster --task transcribe --language $language --output_format srt --output_dir $output_dir $input_file.wav --compute_type float16

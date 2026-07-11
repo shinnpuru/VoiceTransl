@@ -41,6 +41,12 @@ def open_path(path_value: str):
 from prompt2srt import make_srt, make_lrc, merge_lrc_files
 from srt2prompt import make_prompt, merge_srt_files
 import asrlabs_bridge
+from compat import (
+    migrate_config_txt,
+    migrate_old_whisper_models,
+    migrate_output_format,
+    map_whisper_to_asr,
+)
 
 ONLINE_TRANSLATOR_MAPPING = {
     'Kimi': 'https://api.moonshot.cn',
@@ -853,7 +859,6 @@ class MainWindow(QMainWindow):
         """保存 GUI 配置到 gui_settings.yaml 及相关文件"""
         if not silent:
             self._emit_status(_("status_reading_config"))
-        whisper_file = self.whisper_file.currentText() if hasattr(self, 'whisper_file') else '不进行听写'
         translator = self.translator_group.currentText()
         language = self.input_lang.currentText()
         gpt_token = self.gpt_token.text()
@@ -888,7 +893,6 @@ class MainWindow(QMainWindow):
         align_extra = self.align_extra_edit.toPlainText() if hasattr(self, 'align_extra_edit') else ''
 
         gui_settings = {
-            'whisper_file': whisper_file,
             'translator': translator,
             'language': language,
             'gpt_address': gpt_address,
@@ -1227,39 +1231,6 @@ class MainWindow(QMainWindow):
 
         self._emit_status(_("status_cancel_done"))
 
-    def _migrate_config_txt(self):
-        """从旧 config.txt 迁移到 gui_settings.yaml + .env，返回 gui_settings 字典"""
-        with open('config.txt', 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-
-        gpt_token = lines[3].strip() if len(lines) > 3 else ''
-        _save_api_key(gpt_token)
-
-        gui_settings = {
-            'whisper_file': lines[0].strip(),
-            'translator': lines[1].strip(),
-            'language': lines[2].strip(),
-            'gpt_address': lines[4].strip(),
-            'gpt_model': lines[5].strip(),
-            'sakura_file': lines[6].strip(),
-            'sakura_mode': lines[7].strip(),
-            'proxy_address': lines[8].strip(),
-            'uvr_file': lines[9].strip(),
-            'output_format': lines[10].strip(),
-            'subtitle_font': lines[11].strip() if len(lines) > 11 else "",
-            'output_dir': lines[12].strip() if len(lines) > 12 else self.default_output_dir(),
-            'use_input_dir': (lines[13].strip().lower() == 'true') if len(lines) > 13 else False,
-            'max_concurrent': int(lines[14].strip()) if len(lines) > 14 else 1,
-            'enable_segment': (lines[15].strip().lower() == 'true') if len(lines) > 15 else False,
-            'segment_duration': int(lines[16].strip()) if len(lines) > 16 else 10,
-            'change_prompt_mode': lines[17].strip() if len(lines) > 17 else '不修改',
-        }
-
-        with open('gui_settings.yaml', 'w', encoding='utf-8') as f:
-            yaml.dump(gui_settings, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
-
-        return gui_settings
-
     def load_config(self):
         """加载 GUI 配置（优先 gui_settings.yaml，兼容旧 config.txt 自动迁移）"""
         self._suppress_auto_save = True
@@ -1269,11 +1240,9 @@ class MainWindow(QMainWindow):
             with open('gui_settings.yaml', 'r', encoding='utf-8') as f:
                 gui_settings = yaml.safe_load(f) or {}
         elif os.path.exists('config.txt'):
-            gui_settings = self._migrate_config_txt()
+            gui_settings = migrate_config_txt()
 
         if gui_settings:
-            if self.whisper_file and gui_settings.get('whisper_file'):
-                self.whisper_file.setCurrentText(gui_settings['whisper_file'])
             self.translator_group.setCurrentText(gui_settings.get('translator', ''))
             self.input_lang.setCurrentText(gui_settings.get('language', ''))
             self.gpt_address.setText(gui_settings.get('gpt_address', ''))
@@ -1284,10 +1253,7 @@ class MainWindow(QMainWindow):
             self.proxy_address.setText(gui_settings.get('proxy_address', ''))
             if self.uvr_file:
                 self.uvr_file.setCurrentText(gui_settings.get('uvr_file', ''))
-            _fmt_loaded = gui_settings.get('output_format', '双语SRT')
-            # 迁移旧值：中文SRT/LRC → 目标SRT/LRC
-            _fmt_migrate = {'中文SRT': '目标SRT', '中文LRC': '目标LRC'}
-            _fmt_loaded = _fmt_migrate.get(_fmt_loaded, _fmt_loaded)
+            _fmt_loaded = migrate_output_format(gui_settings.get('output_format', '双语SRT'))
             _fmt_idx = self.output_format.findData(_fmt_loaded)
             if _fmt_idx >= 0:
                 self.output_format.setCurrentIndex(_fmt_idx)
@@ -1315,22 +1281,19 @@ class MainWindow(QMainWindow):
                 self.verbose_checkbox.setChecked(gui_settings.get('verbose_mode', False))
 
             # ── ASRLabs 配置加载 + 旧配置迁移 ──
-            # 尝试刷新引擎列表（从 asrlabs 获取可用引擎）
+            # 旧配置迁移：检测 whisper_file → 迁移模型文件 → 清理旧目录（须在刷新引擎列表之前）
+            old_whisper = gui_settings.get('whisper_file', '')
+            if old_whisper and old_whisper != '不进行听写' and not gui_settings.get('asr_engine'):
+                migrated = migrate_old_whisper_models(old_whisper, log_fn=self._emit_status)
+                gui_settings['asr_engine'] = migrated['asr_engine']
+                gui_settings['asr_model'] = migrated['asr_model']
+                gui_settings['whisper_file'] = ''  # 清理旧字段
+
+            # 刷新引擎列表（从 asrlabs 获取引擎元数据，扫描已迁移到 models/transcribe/ 的模型）
             try:
                 self.refresh_asr_engine_lists()
             except Exception:
                 pass  # asrlabs 未安装时静默跳过
-
-            # 旧配置迁移：whisper_file → asr_engine
-            old_whisper = gui_settings.get('whisper_file', '')
-            if old_whisper and old_whisper != '不进行听写' and not gui_settings.get('asr_engine'):
-                if old_whisper.startswith('ggml'):
-                    gui_settings['asr_engine'] = 'whisper'
-                    gui_settings['asr_model'] = os.path.join('whisper', old_whisper)
-                elif old_whisper.startswith('faster-whisper'):
-                    model_name = old_whisper[15:] if len(old_whisper) > 15 else old_whisper
-                    gui_settings['asr_engine'] = 'faster-whisper'
-                    gui_settings['asr_model'] = os.path.join('whisper-faster', old_whisper)
 
             # 应用 ASRLabs 配置
             if hasattr(self, 'asr_engine_combo'):
@@ -1919,13 +1882,6 @@ class MainWindow(QMainWindow):
         self.input_lang = QComboBox()
         self.input_lang.addItems(['ja','en','ko','ru','fr','zh'])
         self.settings_layout.addWidget(self.input_lang)
-
-        # ─ 兼容旧版：whisper_file 隐藏控件 ─
-        # 保留控件名以兼容 load_config/save_config 中的旧字段引用
-        self.whisper_file = QComboBox()
-        self.whisper_file.setVisible(False)
-        self.whisper_file.addItem('不进行听写')
-        self.settings_layout.addWidget(self.whisper_file)
 
         # ─ 按钮 ─
         button_layout = QHBoxLayout()
@@ -2787,7 +2743,7 @@ class MainWorker(QObject):
             
         self.finished.emit()
 
-    def _process_single_audio(self, wav_file, whisper_file, language, param_whisper, param_whisper_faster, json_path, start_named_proc, stop_named_proc):
+    def _process_single_audio(self, wav_file, language, json_path, start_named_proc, stop_named_proc):
         """处理单个音频文件的听写
 
         改造后通过 ASRLabs bridge 调用 asrlabs transcribe + align，
@@ -2977,9 +2933,7 @@ class MainWorker(QObject):
         
         self.save_config()
         input_files = self.master.input_files_list.toPlainText()
-        # ASRLabs 引擎选择（currentData 为引擎名，空串表示"不进行听写"）
         asr_engine = self.master.asr_engine_combo.currentData() or ''
-        whisper_file = '不进行听写' if not asr_engine else asr_engine  # 兼容旧变量名
         translator = self.master.translator_group.currentText()
         language = self.master.input_lang.currentText()
         sakura_file = self.master.sakura_file.currentText()
@@ -2994,14 +2948,6 @@ class MainWorker(QObject):
         use_input_dir = self.master.use_input_dir_checkbox.isChecked()
         enable_segment = self.master.enable_segment_checkbox.isChecked()
         segment_duration_minutes = self.master.segment_duration_spin.value() if enable_segment else 0
-
-        # 旧 param.txt 兼容（保留写入但不使用）
-        param_whisper = ''
-        param_whisper_faster = ''
-        if hasattr(self.master, 'param_whisper'):
-            param_whisper = self.master.param_whisper.toPlainText()
-        if hasattr(self.master, 'param_whisper_faster'):
-            param_whisper_faster = self.master.param_whisper_faster.toPlainText()
 
         with open('llama/param.txt', 'w', encoding='utf-8') as f:
             f.write(param_llama)
@@ -3197,7 +3143,7 @@ class MainWorker(QObject):
                 )
             else:
                 # 音视频输入：提取音频 → 听写（如果已有srt则跳过）
-                if whisper_file == '不进行听写':
+                if not asr_engine:
                     self._emit_status(_("status_no_transcribe_skip"))
                     continue
 
@@ -3287,8 +3233,7 @@ class MainWorker(QObject):
                         # ASRLabs 听写+对齐
                         segment_json = os.path.join(transcribed_dir, segment_name + '.json')
                         self._process_single_audio(
-                            segment_file, asr_engine, language,
-                            param_whisper, param_whisper_faster,
+                            segment_file, language,
                             segment_json, start_named_proc, stop_named_proc,
                         )
 
@@ -3322,7 +3267,7 @@ class MainWorker(QObject):
                 else:
                     # 正常流程（未启用分段）
                     self._emit_status(_("status_asr_in_progress"))
-                    self._process_single_audio(wav_file, whisper_file, language, param_whisper, param_whisper_faster, json_path, start_named_proc, stop_named_proc)
+                    self._process_single_audio(wav_file, language, json_path, start_named_proc, stop_named_proc)
 
                     # 生成原文 SRT/LRC 输出
                     if output_format == '原文SRT' or output_format == '双语SRT':
