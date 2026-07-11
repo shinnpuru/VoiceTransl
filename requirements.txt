@@ -1,3 +1,7 @@
+# ASRLabs
+asrlabs @ git+https://github.com/MurthiNext/ASRLabs.git@v1.0
+
+# VoiceTransl
 httpx<0.28
 opencc
 packaging
@@ -19,15 +23,6 @@ torch
 librosa
 onnx
 soundfile
-onnxruntime-directml
-opencc
-openai
-packaging
-PyYAML
-Requests
-tenacity
-tiktoken
-colorlog
 openpyxl
 orjson
 beautifulsoup4
