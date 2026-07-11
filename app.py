@@ -291,7 +291,7 @@ class TranscribedFile:
     base_path: str       # 文件基本路径（无扩展名），如 /path/to/file
     json_src: str        # 听写产出的 JSON 路径（在 cache/transcribed/ 下）
     output_dir: str      # 该文件的输出目录
-    output_format: str   # 输出格式（如 '中文SRT', '双语SRT'）
+    output_format: str   # 输出格式（如 '目标SRT', '双语SRT'）
     orig_srt_path: str   # 原始 SRT 路径（用于双语合并，空串表示无）
 
 
@@ -342,7 +342,7 @@ class ConcurrentTranslationPool:
             """向统一消息队列发送后端详细日志"""
             msg_queue.put("detail", msg)
 
-        send_status(f"[INFO] [进程{worker_idx}] 开始翻译：{base}")
+        send_status(_("status_translating_start", idx=worker_idx, base=base))
 
         # 创建工作空间
         workspace = ConcurrentTranslationPool._create_workspace_impl(project_dir, worker_idx)
@@ -355,7 +355,7 @@ class ConcurrentTranslationPool:
         ConcurrentTranslationPool._prepare_config_impl(workspace, base_config_path, project_dir)
 
         try:
-            send_status(f"[INFO] [进程{worker_idx}] 正在用 {engine} 翻译 {workspace}...")
+            send_status(_("status_translating_with", idx=worker_idx, engine=engine, workspace=workspace))
             creationflags = 0x08000000 if os.name == 'nt' else 0
 
             # 通过环境变量控制 GalTransl 是否跳过 _ServerStatusFilter
@@ -394,20 +394,20 @@ class ConcurrentTranslationPool:
             retcode = proc.wait()
 
             # 短暂等待，确保状态队列中的日志已排空发送到 GUI
-            send_status(f"[INFO] [进程{worker_idx}] 翻译进程已结束 (exit={retcode})")
+            send_status(_("status_translate_proc_ended", idx=worker_idx, retcode=retcode))
             sleep(0.1)
             if retcode != 0:
                 raise subprocess.CalledProcessError(retcode, _TRANSLATE_CMD)
         except Exception as e:
-            send_status(f"[ERROR] [进程{worker_idx}] 翻译 {base} 失败: {e}")
+            send_status(_("status_translating_error", idx=worker_idx, base=base, error=e))
             raise
 
         # 生成翻译后字幕
-        send_status(f"[INFO] [进程{worker_idx}] 正在生成字幕文件：{base}...")
+        send_status(_("status_translating_srt", idx=worker_idx, base=base))
         ConcurrentTranslationPool._generate_output_impl(
-            json_src, base_path, output_dir, output_format, workspace)
+            json_src, base_path, output_dir, output_format, workspace, orig_srt_path)
 
-        send_status(f"[INFO] [进程{worker_idx}] 文件 {base} 翻译完成！")
+        send_status(_("status_translating_done", idx=worker_idx, base=base))
 
     @staticmethod
     def _create_workspace_impl(project_dir, worker_idx):
@@ -443,23 +443,23 @@ class ConcurrentTranslationPool:
         return config_path
 
     @staticmethod
-    def _generate_output_impl(json_src, base_path, output_dir, output_format, workspace):
+    def _generate_output_impl(json_src, base_path, output_dir, output_format, workspace, orig_srt_path=''):
         """在线程中生成输出文件"""
         json_name = os.path.basename(json_src)
         gt_output_json = os.path.join(workspace, 'gt_output', json_name)
         base_name = os.path.basename(base_path)
 
-        if output_format in ('中文SRT', '双语SRT'):
-            zh_srt_output = os.path.join(output_dir, base_name + '.zh.srt')
+        if output_format in ('目标SRT', '双语SRT'):
+            zh_srt_output = os.path.join(output_dir, base_name + '.tg.srt')
             make_srt(gt_output_json, zh_srt_output)
 
-        if output_format in ('中文LRC', '双语LRC'):
+        if output_format in ('目标LRC', '双语LRC'):
             lrc_output = os.path.join(output_dir, base_name + '.lrc')
             make_lrc(gt_output_json, lrc_output)
 
         if output_format == '双语SRT':
             left = os.path.join(output_dir, base_name + '.srt')
-            right = os.path.join(output_dir, base_name + '.zh.srt')
+            right = os.path.join(output_dir, base_name + '.tg.srt')
             if os.path.exists(left) and os.path.exists(right):
                 merge_srt_files([left, right],
                                 os.path.join(output_dir, base_name + '.combine.srt'))
@@ -531,7 +531,7 @@ class ConcurrentTranslationPool:
                     self._shared_local_model_proc = proc
                     self._shared_local_model_port = port
             else:
-                self._msg_queue.put("status", "[ERROR] 共享本地模型启动失败")
+                self._msg_queue.put("status", _("status_local_model_start_fail"))
 
         # 创建线程事件
         self._thread_stop_event = threading.Event()
@@ -565,7 +565,7 @@ class ConcurrentTranslationPool:
                                 self._shared_local_model_proc = proc
                                 self._shared_local_model_port = port
                             else:
-                                self._msg_queue.put("status", "[ERROR] 共享本地模型启动失败")
+                                self._msg_queue.put("status", _("status_local_model_start_fail"))
 
                 # 执行翻译（在调用线程中同步执行）
                 tf_dict = {
@@ -582,7 +582,7 @@ class ConcurrentTranslationPool:
                 except Exception as e:
                     with self._error_lock:
                         self._error_count += 1
-                    self._msg_queue.put("status", f"[ERROR] 翻译失败: {e}")
+                    self._msg_queue.put("status", _("status_translation_fail", error=e))
 
                 # 停止共享本地模型
                 self._stop_shared_local_model()
@@ -601,7 +601,7 @@ class ConcurrentTranslationPool:
         """所有任务已提交，发送哨兵信号"""
         if self._serial_mode:
             return
-        for _ in range(self._max_concurrent):
+        for _unused in range(self._max_concurrent):
             self._task_queue.put(None)
 
     def wait_all(self, timeout=600):
@@ -664,7 +664,7 @@ class ConcurrentTranslationPool:
             t.join(timeout=3)
             if t.is_alive():
                 self._msg_queue.put("status",
-                    f"[WARN] 翻译工作线程 {t.name} 未能在停止信号后退出")
+                    _("status_worker_not_exited", name=t.name))
 
         # 停止共享的本地模型进程
         self._stop_shared_local_model()
@@ -681,7 +681,7 @@ class ConcurrentTranslationPool:
         if proc:
             try:
                 if proc.poll() is None:
-                    self._msg_queue.put("status", "[INFO] 正在停止共享本地模型...")
+                    self._msg_queue.put("status", _("status_local_model_stopping"))
                     proc.terminate()
                     proc.wait(timeout=5)
             except Exception:
@@ -708,7 +708,7 @@ class ConcurrentTranslationPool:
         args = [param.replace('$model_file', sakura_file).replace('$num_layers', sakura_mode).replace('$port', str(port))
                 for param in param_llama.split()]
 
-        self._msg_queue.put("status", f"[INFO] 正在启动共享本地模型，端口 {port}...")
+        self._msg_queue.put("status", _("status_local_model_starting", port=port))
 
         try:
             creationflags = 0x08000000 if os.name == 'nt' else 0
@@ -734,7 +734,7 @@ class ConcurrentTranslationPool:
                             body = chat_resp.json()
                             if isinstance(body, dict) and body.get("choices"):
                                 self._msg_queue.put("status",
-                                    f"[INFO] 共享本地模型已就绪，端口 {port}")
+                                    _("status_local_model_ready", port=port))
                                 break
                         except Exception:
                             pass
@@ -743,7 +743,7 @@ class ConcurrentTranslationPool:
 
                 if time() - start_wait > 120:
                     self._msg_queue.put("status",
-                        f"[ERROR] 共享本地模型启动超时")
+                        _("status_local_model_timeout"))
                     try:
                         proc.terminate()
                         proc.wait(timeout=3)
@@ -755,7 +755,7 @@ class ConcurrentTranslationPool:
             return proc, port
         except Exception as e:
             self._msg_queue.put("status",
-                f"[ERROR] 启动共享本地模型失败: {e}")
+                _("status_local_model_start_error", error=e))
             return None, None
 
 
@@ -805,6 +805,7 @@ class MainWindow(QMainWindow):
         self._auto_save_timer.setSingleShot(True)
         self._auto_save_timer.setInterval(200)
         self._auto_save_timer.timeout.connect(self._auto_save_config)
+        self._load_ui_language()
         self.setWindowTitle(_("window_title"))
         self.setWindowIcon(QtGui.QIcon('icon.png'))
         self.init_system_tray()
@@ -817,6 +818,18 @@ class MainWindow(QMainWindow):
         self._log_level_filter = 'ALL'  # 日志级别过滤默认值
         self.setup_timer()
         self.splashScreen.finish()
+
+    def _load_ui_language(self):
+        """从 gui_settings.yaml 加载已保存的界面语言，在任何 _() 调用之前执行"""
+        try:
+            if os.path.exists('gui_settings.yaml'):
+                with open('gui_settings.yaml', 'r', encoding='utf-8') as f:
+                    settings = yaml.safe_load(f) or {}
+                saved_lang = settings.get('ui_language')
+                if saved_lang and saved_lang in ('zh', 'en', 'ja'):
+                    set_language(saved_lang)
+        except Exception:
+            pass
 
     def _emit_status(self, msg: str):
         """同时向统一消息队列和窗口标题发送状态消息"""
@@ -838,7 +851,7 @@ class MainWindow(QMainWindow):
     def save_config(self, silent: bool = False):
         """保存 GUI 配置到 gui_settings.yaml 及相关文件"""
         if not silent:
-            self._emit_status("[INFO] 正在读取配置...")
+            self._emit_status(_("status_reading_config"))
         whisper_file = self.whisper_file.currentText()
         translator = self.translator_group.currentText()
         language = self.input_lang.currentText()
@@ -849,7 +862,7 @@ class MainWindow(QMainWindow):
         sakura_mode = self.sakura_mode.text()
         proxy_address = self.proxy_address.text()
         uvr_file = self.uvr_file.currentText()
-        output_format = self.output_format.currentText()
+        output_format = self.output_format.currentData()
         subtitle_font = self.subtitle_font_combo.currentText()
         output_dir = self.output_dir_edit.text().strip() or self.default_output_dir()
         use_input_dir = self.use_input_dir_checkbox.isChecked()
@@ -857,7 +870,7 @@ class MainWindow(QMainWindow):
         os.makedirs(output_dir, exist_ok=True)
         enable_segment = self.enable_segment_checkbox.isChecked()
         segment_duration = self.segment_duration_spin.value()
-        change_prompt_mode = self.change_prompt_mode.currentText() if hasattr(self, 'change_prompt_mode') else '不修改'
+        change_prompt_mode = self.change_prompt_mode.currentData() if hasattr(self, 'change_prompt_mode') else '不修改'
         auto_shutdown = self.auto_shutdown_checkbox.isChecked() if hasattr(self, 'auto_shutdown_checkbox') else False
         target_translation_lang = self.target_lang.currentData() if hasattr(self, 'target_lang') else 'zh-cn'
         current_lang = get_language()
@@ -882,6 +895,7 @@ class MainWindow(QMainWindow):
             'change_prompt_mode': change_prompt_mode,
             'log_level_filter': self.log_filter_combo.currentText(),
             'verbose_mode': self.verbose_checkbox.isChecked(),
+            'ui_language': current_lang,
         }
         with open('gui_settings.yaml', 'w', encoding='utf-8') as f:
             yaml.dump(gui_settings, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
@@ -904,7 +918,7 @@ class MainWindow(QMainWindow):
             f.write(self.after_dict.toPlainText())
 
         if not silent:
-            self._emit_status("[INFO] 配置保存完成！")
+            self._emit_status(_("status_config_saved"))
 
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.FocusOut:
@@ -944,7 +958,7 @@ class MainWindow(QMainWindow):
         self.load_config()
 
     def browse_synth_video(self):
-        files, _ = QFileDialog.getOpenFileNames(self, _("dialog_select_video"), "", "Video Files (*.mp4 *.mkv *.avi *.mov *.flv);;All Files (*)")
+        files, _unused = QFileDialog.getOpenFileNames(self, _("dialog_select_video"), "", "Video Files (*.mp4 *.mkv *.avi *.mov *.flv);;All Files (*)")
         if files:
             current_text = self.synth_video_files_list.toPlainText().strip()
             new_text = "\n".join(files)
@@ -954,7 +968,7 @@ class MainWindow(QMainWindow):
                 self.synth_video_files_list.setText(new_text)
 
     def browse_synth_srt(self):
-        files, _ = QFileDialog.getOpenFileNames(self, _("dialog_select_subtitle"), "", "Subtitle Files (*.srt *.ass *.vtt);;All Files (*)")
+        files, _unused = QFileDialog.getOpenFileNames(self, _("dialog_select_subtitle"), "", "Subtitle Files (*.srt *.ass *.vtt);;All Files (*)")
         if files:
             current_text = self.synth_srt_files_list.toPlainText().strip()
             new_text = "\n".join(files)
@@ -1079,12 +1093,12 @@ class MainWindow(QMainWindow):
                 self.sakura_file.setCurrentText(current_model)
 
     def cancel_task(self):
-        self._emit_status("[INFO] 正在取消当前任务...")
+        self._emit_status(_("status_cancelling"))
         try:
             if self.worker:
                 self.worker.stop()
         except Exception as e:
-            self._emit_status(f"[WARN] 停止worker时出错: {e}")
+            self._emit_status(_("status_cancel_worker_error", error=e))
 
         try:
             if self.thread and self.thread.isRunning():
@@ -1093,9 +1107,9 @@ class MainWindow(QMainWindow):
                     self.thread.terminate()
                     self.thread.wait(2000)
         except Exception as e:
-            self._emit_status(f"[WARN] 停止线程时出错: {e}")
+            self._emit_status(_("status_cancel_thread_error", error=e))
 
-        self._emit_status("[INFO] 取消任务完成。")
+        self._emit_status(_("status_cancel_done"))
 
     def _migrate_config_txt(self):
         """从旧 config.txt 迁移到 gui_settings.yaml + .env，返回 gui_settings 字典"""
@@ -1154,7 +1168,13 @@ class MainWindow(QMainWindow):
             self.proxy_address.setText(gui_settings.get('proxy_address', ''))
             if self.uvr_file:
                 self.uvr_file.setCurrentText(gui_settings.get('uvr_file', ''))
-            self.output_format.setCurrentText(gui_settings.get('output_format', ''))
+            _fmt_loaded = gui_settings.get('output_format', '双语SRT')
+            # 迁移旧值：中文SRT/LRC → 目标SRT/LRC
+            _fmt_migrate = {'中文SRT': '目标SRT', '中文LRC': '目标LRC'}
+            _fmt_loaded = _fmt_migrate.get(_fmt_loaded, _fmt_loaded)
+            _fmt_idx = self.output_format.findData(_fmt_loaded)
+            if _fmt_idx >= 0:
+                self.output_format.setCurrentIndex(_fmt_idx)
             subtitle_font = gui_settings.get('subtitle_font', '')
             if subtitle_font:
                 self.subtitle_font_combo.setCurrentText(subtitle_font)
@@ -1167,7 +1187,9 @@ class MainWindow(QMainWindow):
             self.segment_duration_spin.setValue(gui_settings.get('segment_duration', 10))
             change_prompt_mode = gui_settings.get('change_prompt_mode', '')
             if hasattr(self, 'change_prompt_mode') and change_prompt_mode:
-                self.change_prompt_mode.setCurrentText(change_prompt_mode)
+                _pm_idx = self.change_prompt_mode.findData(change_prompt_mode)
+                if _pm_idx >= 0:
+                    self.change_prompt_mode.setCurrentIndex(_pm_idx)
             # 日志级别过滤和详细模式
             log_filter = gui_settings.get('log_level_filter', 'ALL')
             if hasattr(self, 'log_filter_combo'):
@@ -1224,8 +1246,10 @@ class MainWindow(QMainWindow):
                     'OverwritePrompt': '覆盖'
                 }
                 if hasattr(self, 'change_prompt_mode'):
-                    self.change_prompt_mode.setCurrentText(
-                        mode_reverse_mapping.get(change_prompt_val, '不修改'))
+                    _pm_val = mode_reverse_mapping.get(change_prompt_val, '不修改')
+                    _pm_idx = self.change_prompt_mode.findData(_pm_val)
+                    if _pm_idx >= 0:
+                        self.change_prompt_mode.setCurrentIndex(_pm_idx)
 
                 prompt_content = common_cfg.get('gpt.prompt_content', '')
                 if hasattr(self, 'extra_prompt') and prompt_content:
@@ -1282,7 +1306,7 @@ class MainWindow(QMainWindow):
         for target, text in entries:
             if UIMessageQueue.is_completion_entry(target):
                 # 完成哨兵：两个框都追加
-                completion_msg = "[INFO] 所有文件处理完成！"
+                completion_msg = _("status_all_done")
                 self.output_text_edit.append(completion_msg)
                 self.log_display.appendPlainText(completion_msg)
             elif target == 'status':
@@ -1373,7 +1397,7 @@ class MainWindow(QMainWindow):
 
         self.output_text_edit = QTextEdit()
         self.output_text_edit.setReadOnly(True)
-        self.output_text_edit.setPlaceholderText("当前无输出信息...")
+        self.output_text_edit.setPlaceholderText(_("log_realtime_placeholder"))
         self.log_layout.addWidget(self.output_text_edit)
 
         self.log_file_label = BodyLabel(_("log_file_label"))
@@ -1381,14 +1405,14 @@ class MainWindow(QMainWindow):
 
         # 日志过滤工具栏
         filter_layout = QHBoxLayout()
-        filter_label = QLabel("日志级别过滤:")
+        filter_label = QLabel(_("log_filter_label"))
         self.log_filter_combo = QComboBox()
         self.log_filter_combo.addItems(["ALL", "INFO+", "WARNING+", "ERROR+"])
         self.log_filter_combo.currentTextChanged.connect(self._on_log_filter_changed)
 
         # 详细日志模式复选框
-        self.verbose_checkbox = QCheckBox("详细模式（显示 GalTransl 逐行翻译记录）")
-        self.verbose_checkbox.setToolTip("启用后子进程将输出完整日志，适合开发调试。需在启动翻译前切换。")
+        self.verbose_checkbox = QCheckBox(_("log_verbose_checkbox"))
+        self.verbose_checkbox.setToolTip(_("log_verbose_tooltip"))
         self.verbose_checkbox.stateChanged.connect(self._on_verbose_changed)
 
         filter_layout.addWidget(filter_label)
@@ -1464,9 +1488,26 @@ class MainWindow(QMainWindow):
 
         self.addSubInterface(self.about_tab, FluentIcon.HEART, _("tab_about"), NavigationItemPosition.TOP)
 
-    def _on_language_changed(self):
-        pass
-        
+    def _on_language_changed(self, index: int):
+        """界面语言变更：保存设置并提示重启后生效"""
+        if self._suppress_auto_save:
+            return
+        lang_map = {0: "zh", 1: "en", 2: "ja"}
+        lang_code = lang_map.get(index, "zh")
+        set_language(lang_code)
+        # 触发防抖自动保存（save_config 会写入 ui_language）
+        self._schedule_auto_save()
+        # 通知用户：状态栏消息 + 托盘气泡
+        lang_name = self.lang_selector.currentText() if hasattr(self, 'lang_selector') else lang_code
+        self._emit_status(_("status_lang_changed", lang=lang_name))
+        if getattr(self, 'tray_icon', None):
+            self.tray_icon.showMessage(
+                _("notify_lang_changed_title"),
+                _("notify_lang_changed_msg"),
+                QSystemTrayIcon.Information,
+                3000
+            )
+
     def initInputOutputTab(self):
         self.input_output_tab = Widget("Home", self)
         self.input_output_layout = self.input_output_tab.vBoxLayout
@@ -1500,7 +1541,7 @@ class MainWindow(QMainWindow):
         self.target_lang = QComboBox()
         TARGET_LANG_CODES = ['zh-cn', 'zh-tw', 'en', 'ja', 'ko', 'ru', 'fr']
         for code in TARGET_LANG_CODES:
-            self.target_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), code)
+            self.target_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), userData=code)
         lang_layout.addWidget(self.target_lang)
         self.input_output_layout.addLayout(lang_layout)
 
@@ -1512,6 +1553,21 @@ class MainWindow(QMainWindow):
         self._bind_drop_event(self.input_files_list)
         self.input_files_list.setPlaceholderText(_("io_input_placeholder"))
         self.input_output_layout.addWidget(self.input_files_list)
+
+        # Segment Section
+        segment_layout = QHBoxLayout()
+        self.enable_segment_checkbox = QCheckBox(_("io_segment_checkbox"))
+        self.enable_segment_checkbox.stateChanged.connect(self.update_segment_controls)
+        segment_layout.addWidget(self.enable_segment_checkbox)
+        self.io_segment_duration_label = BodyLabel(_("io_segment_duration_label"))
+        segment_layout.addWidget(self.io_segment_duration_label)
+        self.segment_duration_spin = QSpinBox()
+        self.segment_duration_spin.setRange(1, 20)
+        self.segment_duration_spin.setValue(10)
+        self.segment_duration_spin.setEnabled(False)
+        segment_layout.addWidget(self.segment_duration_spin)
+        segment_layout.addStretch()
+        self.input_output_layout.addLayout(segment_layout)
 
         # Proxy Section
         self.io_proxy_label = BodyLabel(_("io_proxy_label"))
@@ -1547,24 +1603,20 @@ class MainWindow(QMainWindow):
         self.io_format_label = BodyLabel(_("io_format_label"))
         self.input_output_layout.addWidget(self.io_format_label)
         self.output_format = QComboBox()
-        self.output_format.addItems(['原文SRT', '原文LRC', '中文LRC', '双语LRC', '中文SRT', '双语SRT'])
-        self.output_format.setCurrentText('双语SRT')
+        for _fmt_val, _fmt_key in (
+            ('原文SRT', 'format_original_srt'),
+            ('原文LRC', 'format_original_lrc'),
+            ('目标LRC', 'format_target_lrc'),
+            ('双语LRC', 'format_bilingual_lrc'),
+            ('目标SRT', 'format_target_srt'),
+            ('双语SRT', 'format_bilingual_srt'),
+        ):
+            self.output_format.addItem(_(_fmt_key), userData=_fmt_val)
+        _default_fmt_idx = self.output_format.findData('双语SRT')
+        if _default_fmt_idx >= 0:
+            self.output_format.setCurrentIndex(_default_fmt_idx)
         self.input_output_layout.addWidget(self.output_format)
 
-        # Segment Section
-        segment_layout = QHBoxLayout()
-        self.enable_segment_checkbox = QCheckBox(_("io_segment_checkbox"))
-        self.enable_segment_checkbox.stateChanged.connect(self.update_segment_controls)
-        segment_layout.addWidget(self.enable_segment_checkbox)
-        self.io_segment_duration_label = BodyLabel(_("io_segment_duration_label"))
-        segment_layout.addWidget(self.io_segment_duration_label)
-        self.segment_duration_spin = QSpinBox()
-        self.segment_duration_spin.setRange(1, 20)
-        self.segment_duration_spin.setValue(10)
-        self.segment_duration_spin.setEnabled(False)
-        segment_layout.addWidget(self.segment_duration_spin)
-        segment_layout.addStretch()
-        self.input_output_layout.addLayout(segment_layout)
 
         button_layout = QHBoxLayout()
         self.run_button = QPushButton(_("io_run_btn"))
@@ -1619,8 +1671,15 @@ class MainWindow(QMainWindow):
         self.dict_prompt_mode_label = BodyLabel(_("dict_prompt_mode_label"))
         self.dict_layout.addWidget(self.dict_prompt_mode_label)
         self.change_prompt_mode = QComboBox()
-        self.change_prompt_mode.addItems(['不修改', '追加', '覆盖'])
-        self.change_prompt_mode.setCurrentText('不修改')
+        for _pm_val, _pm_key in (
+            ('不修改', 'dict_prompt_mode_no'),
+            ('追加', 'dict_prompt_mode_append'),
+            ('覆盖', 'dict_prompt_mode_overwrite'),
+        ):
+            self.change_prompt_mode.addItem(_(_pm_key), userData=_pm_val)
+        _default_pm_idx = self.change_prompt_mode.findData('不修改')
+        if _default_pm_idx >= 0:
+            self.change_prompt_mode.setCurrentIndex(_default_pm_idx)
         self.dict_layout.addWidget(self.change_prompt_mode)
 
         self.addSubInterface(self.dict_tab, FluentIcon.SETTING, _("tab_dict"), NavigationItemPosition.TOP)
@@ -1866,8 +1925,8 @@ class MainWindow(QMainWindow):
         self.synth_subtitle_type_label = BodyLabel(_("synth_subtitle_type_label"))
         hbox.addWidget(self.synth_subtitle_type_label)
         self.subtitle_type_combo = QComboBox()
-        self.subtitle_type_combo.addItem("硬字幕")
-        self.subtitle_type_combo.addItem("软字幕")
+        self.subtitle_type_combo.addItem(_("synth_sub_hard"), userData="硬字幕")
+        self.subtitle_type_combo.addItem(_("synth_sub_soft"), userData="软字幕")
         hbox.addWidget(self.subtitle_type_combo)
 
         self.synth_font_label = BodyLabel(_("synth_font_label"))
@@ -2014,14 +2073,14 @@ class MainWindow(QMainWindow):
         self.switchTo(self.log_tab)
     
     def cleaner(self):
-        self._emit_status("[INFO] 正在清理中间文件...")
+        self._emit_status(_("status_cleaning_intermediate"))
         if os.path.exists('project/gt_input'):
             shutil.rmtree('project/gt_input')
         if os.path.exists('project/gt_output'):
             shutil.rmtree('project/gt_output')
         if os.path.exists('project/transl_cache'):
             shutil.rmtree('project/transl_cache')
-        self._emit_status("[INFO] 正在清理输出...")
+        self._emit_status(_("status_cleaning_output"))
         if os.path.exists('project/cache'):
             shutil.rmtree('project/cache')
         os.makedirs('project/cache', exist_ok=True)
@@ -2031,7 +2090,7 @@ def error_handler(func):
         try:
             func(self)
         except Exception as e:
-            self._emit_status(f"[ERROR] {e}")
+            self._emit_status(_("status_generic_error", error=e))
             self.finished.emit()
             # Ensure all child processes are terminated on error
             self.stop()
@@ -2108,14 +2167,14 @@ class MainWorker(QObject):
                 else:  # Linux
                     subprocess.Popen(['shutdown', '-h', 'now'])
             except Exception as e:
-                self.status.emit(f"[ERROR] 自动关机失败: {e}")
+                self.status.emit(_("status_auto_shutdown_error", error=e))
 
     def save_config(self, silent: bool = False):
         self.master.save_config(silent)
 
     @error_handler
     def update_translation_config(self):
-        self._emit_status("[INFO] 正在进行翻译配置...")
+        self._emit_status(_("status_config_translating"))
         translator = self.master.translator_group.currentText()
         language = self.master.input_lang.currentText()
         gpt_token = self.master.gpt_token.text() or _load_api_key()
@@ -2133,13 +2192,13 @@ class MainWorker(QObject):
         except FileNotFoundError:
             # 首次运行：从默认模板初始化配置文件
             from GalTransl.DefaultProjectConfig import DEFAULT_PROJECT_CONFIG_YAML
-            self._emit_status("[INFO] 首次运行，正在初始化项目配置文件...")
+            self._emit_status(_("status_first_run_init"))
             os.makedirs('project', exist_ok=True)
             cfg = yaml.safe_load(DEFAULT_PROJECT_CONFIG_YAML) or {}
             with open('project/config.yaml', 'w', encoding='utf-8') as f:
                 yaml.dump(cfg, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
         except Exception as e:
-            self._emit_status(f"[ERROR] 无法读取配置文件 project/config.yaml：{e}")
+            self._emit_status(_("status_config_read_error", error=e))
             return
 
         # Update language setting
@@ -2204,7 +2263,7 @@ class MainWorker(QObject):
 
         # Update extra prompt configuration (gpt.change_prompt and gpt.prompt_content)
         extra_prompt = self.master.extra_prompt.toPlainText().strip() if hasattr(self.master, 'extra_prompt') else ''
-        change_prompt_mode = self.master.change_prompt_mode.currentText() if hasattr(self.master, 'change_prompt_mode') else '不修改'
+        change_prompt_mode = self.master.change_prompt_mode.currentData() if hasattr(self.master, 'change_prompt_mode') else '不修改'
 
         # Map UI mode to config values
         mode_mapping = {
@@ -2229,7 +2288,7 @@ class MainWorker(QObject):
             with open('project/config.yaml', 'w', encoding='utf-8') as f:
                 yaml.dump(cfg, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
         except Exception as e:
-            self._emit_status(f"[ERROR] 写入配置文件失败：{e}")
+            self._emit_status(_("status_config_write_error", error=e))
 
     @error_handler
     def test_online_api(self):
@@ -2249,13 +2308,13 @@ class MainWorker(QObject):
             base_url = ONLINE_TRANSLATOR_MAPPING.get(translator)
 
         if not base_url:
-            self._emit_status("[ERROR] 请选择模型。")
+            self._emit_status(_("status_api_select_model"))
             self.finished.emit()
             return
 
         base_url = base_url.rstrip('/') + '/v1/models'
 
-        self._emit_status(f"[INFO] 正在测试API，地址：{base_url} ...")
+        self._emit_status(_("status_api_testing", url=base_url))
         try:
             if proxy_address:
                 os.environ['HTTP_PROXY'] = proxy_address
@@ -2282,7 +2341,7 @@ class MainWorker(QObject):
                             models.append(item['id'])
                 if models:
                     self.show_model_dialog.emit(models)
-                    self._emit_status(f"[INFO] API测试完成，发现 {len(models)} 个模型")
+                    self._emit_status(_("status_api_complete", count=len(models)))
                 else:
                     parse_error = True
             except Exception:
@@ -2293,9 +2352,9 @@ class MainWorker(QObject):
                     body = resp.text[:500].replace('\n', ' ')
                 except Exception:
                     body = str(resp)[:500].replace('\n', ' ')
-                self._emit_status(f"[INFO] API测试完成，地址：{base_url}，响应：{body}")
+                self._emit_status(_("status_api_complete_body", url=base_url, body=body))
         except Exception as e:
-            self._emit_status(f"[ERROR] API测试失败：{e}")
+            self._emit_status(_("status_api_error", error=e))
 
         self.finished.emit()
 
@@ -2306,7 +2365,7 @@ class MainWorker(QObject):
         self.save_config()
         uvr_file = self.master.uvr_file.currentText()
         if not uvr_file.endswith('.onnx'):
-            self._emit_status("[ERROR] 请选择正确的UVR模型文件！")
+            self._emit_status(_("status_uvr_model_error"))
             self.finished.emit()
             return
 
@@ -2317,15 +2376,15 @@ class MainWorker(QObject):
                 if self._stop_requested:
                     break
                 if not os.path.exists(input_file):
-                    self._emit_status(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=input_file))
                     self.finished.emit()
 
-                self._emit_status(f"[INFO] 正在进行伴奏分离...第{idx+1}个，共{len(input_files)}个")
+                self._emit_status(_("status_vocal_split_label", idx=idx+1, total=len(input_files)))
                 proc = self._start_process([*_SEPARATE_CMD, '-m', os.path.join('separate',uvr_file), input_file])
                 proc.wait()
                 self._cleanup_process(proc)
 
-            self._emit_status("[INFO] 文件处理完成！")
+            self._emit_status(_("status_vocal_processing_done"))
         self.finished.emit()
 
     @error_handler
@@ -2341,7 +2400,7 @@ class MainWorker(QObject):
             with open('project/config.yaml', 'r', encoding='utf-8') as f:
                 cfg = yaml.safe_load(f)
         except Exception as e:
-            self._emit_status(f"[ERROR] 无法读取配置文件 project/config.yaml：{e}")
+            self._emit_status(_("status_config_read_error", error=e))
             self.finished.emit()
             return
 
@@ -2371,13 +2430,13 @@ class MainWorker(QObject):
             input_files = input_files.strip().split('\n')
             for idx, input_file in enumerate(input_files):
                 if not os.path.exists(input_file):
-                    self._emit_status(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=input_file))
                     self.finished.emit()
 
                 from summarize import summarize
-                self._emit_status(f"[INFO] 正在进行文本摘要...第{idx+1}个，共{len(input_files)}个")
+                self._emit_status(_("status_summarize_processing", idx=idx+1, total=len(input_files)))
                 summarize(input_file, address, model, token, prompt)
-            self._emit_status("[INFO] 文件处理完成！")
+            self._emit_status(_("status_processing_done"))
         self.finished.emit()
 
     @error_handler
@@ -2386,7 +2445,7 @@ class MainWorker(QObject):
         self._stop_event.clear()
         self.save_config()
         subtitle_font = self.master.subtitle_font_combo.currentText().strip()
-        subtitle_type = self.master.subtitle_type_combo.currentText().strip()
+        subtitle_type = self.master.subtitle_type_combo.currentData() or "硬字幕"
         
         video_files_text = self.master.synth_video_files_list.toPlainText().strip()
         srt_files_text = self.master.synth_srt_files_list.toPlainText().strip()
@@ -2415,7 +2474,7 @@ class MainWorker(QObject):
             srt_files = srt_files_text.split('\n')
             
             if len(srt_files) != len(video_files):
-                self._emit_status("[ERROR] 字幕文件和视频文件数量不匹配，请重新选择文件！")
+                self._emit_status(_("status_synth_mismatch"))
                 self.finished.emit()
                 return
             
@@ -2423,16 +2482,16 @@ class MainWorker(QObject):
                 if self._stop_requested:
                     break
                 if not os.path.exists(input_file):
-                    self._emit_status(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=input_file))
                     self.finished.emit()
                     return
 
                 if not os.path.exists(input_srt):
-                    self._emit_status(f"[ERROR] {input_srt}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=input_srt))
                     self.finished.emit()
                     return
 
-                self._emit_status(f"[INFO] 当前处理文件：{input_file} 第{idx+1}个，共{len(video_files)}个")
+                self._emit_status(_("status_synth_processing", file=input_file, idx=idx+1, total=len(video_files)))
                 
                 output_file = input_file + '_synth.mp4'
 
@@ -2440,18 +2499,18 @@ class MainWorker(QObject):
                     input_srt_cache = shutil.copy(input_srt, 'project/cache/')
                     subtitle_filter = build_subtitle_filter(input_srt_cache, subtitle_font)
                     if subtitle_font:
-                        self._emit_status(f"[INFO] 使用字幕字体：{subtitle_font}")
-                    self._emit_status(f"[INFO] 正在合成硬字幕...")
+                        self._emit_status(_("status_synth_font", font=subtitle_font))
+                    self._emit_status(_("status_synth_hard_sub"))
                     proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', output_file])
                 else:
-                    self._emit_status(f"[INFO] 正在合成软字幕...")
+                    self._emit_status(_("status_synth_soft_sub"))
                     # For soft subtitles, we just map the streams.
                     # Depending on the container and subtitle format, -c:s mov_text works for mp4.
                     proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-i', input_srt, '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'mov_text', output_file])
 
                 proc.wait()
                 self._cleanup_process(proc)
-                self._emit_status("[INFO] 视频合成完成！")
+                self._emit_status(_("status_synth_done"))
             
         self.finished.emit()
 
@@ -2469,15 +2528,15 @@ class MainWorker(QObject):
                 if self._stop_requested:
                     break
                 if not os.path.exists(input_file):
-                    self._emit_status(f"[ERROR] {input_file}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=input_file))
                     self.finished.emit()
 
-                self._emit_status(f"[INFO] 当前处理文件：{input_file} 第{idx+1}个，共{len(input_files)}个")
-                self._emit_status(f"[INFO] 正在进行切片...从{clip_start}到{clip_end}...")
+                self._emit_status(_("status_processing_file", file=input_file, idx=idx+1, total=len(input_files)))
+                self._emit_status(_("status_clip_processing", start=clip_start, end=clip_end))
                 proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]])
                 proc.wait()
                 self._cleanup_process(proc)
-                self._emit_status("[INFO] 视频切片完成！")
+                self._emit_status(_("status_clip_done"))
         self.finished.emit()
 
     @error_handler
@@ -2491,25 +2550,25 @@ class MainWorker(QObject):
             audio_files = sorted([i for i in input_files if i.endswith('.wav') or i.endswith('.mp3') or i.endswith('.flac')])
             image_files = sorted([i for i in input_files if i.endswith('.png') or i.endswith('.jpg') or i.endswith('.jpeg')])
             if len(audio_files) != len(image_files):
-                self._emit_status("[ERROR] 音频文件和图像文件数量不匹配，请重新选择文件！")
+                self._emit_status(_("status_audio_mismatch"))
                 self.finished.emit()
             
             for idx, (audio_input, image_input) in enumerate(zip(audio_files, image_files)):
                 if self._stop_requested:
                     break
                 if not os.path.exists(audio_input):
-                    self._emit_status(f"[ERROR] {audio_input}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=audio_input))
                     self.finished.emit()
 
                 if not os.path.exists(image_input):
-                    self._emit_status(f"[ERROR] {image_input}文件不存在，请重新选择文件！")
+                    self._emit_status(_("status_file_not_exist", file=image_input))
                     self.finished.emit()
 
-                self._emit_status(f"[INFO] 当前处理文件：{audio_input} 第{idx+1}个，共{len(image_files)}个")
+                self._emit_status(_("status_processing_file", file=audio_input, idx=idx+1, total=len(image_files)))
                 proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'])
                 proc.wait()
                 self._cleanup_process(proc)
-                self._emit_status("[INFO] 视频合成完成！")
+                self._emit_status(_("status_synth_done"))
             
         self.finished.emit()
 
@@ -2519,13 +2578,13 @@ class MainWorker(QObject):
 
         if whisper_file.startswith('ggml'):
             print(param_whisper)
-            whisper_proc, _ = start_named_proc(
+            whisper_proc, _unused = start_named_proc(
                 'whisper',
                 [param.replace('$whisper_file',whisper_file).replace('$input_file',base_path).replace('$language',language) for param in param_whisper.split()]
             )
         elif whisper_file.startswith('faster-whisper'):
             print(param_whisper_faster)
-            whisper_proc, _ = start_named_proc(
+            whisper_proc, _unused = start_named_proc(
                 'whisper_faster',
                 [param.replace('$whisper_file',whisper_file[15:]).replace('$input_file',base_path).replace('$language',language).replace('$output_dir',os.path.dirname(wav_file)) for param in param_whisper_faster.split()]
             )
@@ -2558,7 +2617,7 @@ class MainWorker(QObject):
             )
             return float(result.stdout.strip())
         except Exception as e:
-            self._emit_status(f"[WARN] 获取音频时长失败: {e}")
+            self._emit_status(_("status_audio_duration_fail", error=e))
             return 0
 
     def _split_audio(self, audio_file, segment_duration_minutes, output_dir):
@@ -2573,7 +2632,7 @@ class MainWorker(QObject):
         num_segments = int(total_duration // segment_duration) + (1 if total_duration % segment_duration > 1 else 0)
         base_name = os.path.basename(audio_file).rsplit('.', 1)[0]
 
-        self._emit_status(f"[INFO] 音频时长 {total_duration:.2f} 秒，将分为 {num_segments} 个片段处理")
+        self._emit_status(_("status_audio_duration", duration=total_duration, segments=num_segments))
 
         for i in range(num_segments):
             start_time = i * segment_duration
@@ -2592,9 +2651,9 @@ class MainWorker(QObject):
                 if proc.returncode == 0 and os.path.exists(segment_file):
                     segment_files.append(segment_file)
                 else:
-                    self._emit_status(f"[ERROR] 切分片段 {i+1} 失败")
+                    self._emit_status(_("status_segment_slice_fail", idx=i+1))
             except Exception as e:
-                self._emit_status(f"[ERROR] 切分片段 {i+1} 失败: {e}")
+                self._emit_status(_("status_segment_slice_fail_detail", idx=i+1, error=e))
 
         return segment_files, total_duration
 
@@ -2623,8 +2682,8 @@ class MainWorker(QObject):
                 if os.path.exists(orig_srt):
                     segment_srts_orig.append(orig_srt)
 
-            if output_format in ('中文SRT', '双语SRT'):
-                zh_srt = os.path.join(segment_dir, segment_name + '.zh.srt')
+            if output_format in ('目标SRT', '双语SRT'):
+                zh_srt = os.path.join(segment_dir, segment_name + '.tg.srt')
                 if os.path.exists(zh_srt):
                     segment_srts_zh.append(zh_srt)
 
@@ -2633,7 +2692,7 @@ class MainWorker(QObject):
                 if os.path.exists(orig_lrc):
                     segment_lrcs_orig.append(orig_lrc)
 
-            if output_format in ('中文LRC', '双语LRC'):
+            if output_format in ('目标LRC', '双语LRC'):
                 zh_lrc = os.path.join(segment_dir, segment_name + '.zh.lrc')
                 if os.path.exists(zh_lrc):
                     segment_lrcs_zh.append(zh_lrc)
@@ -2643,14 +2702,14 @@ class MainWorker(QObject):
             final_srt = os.path.join(final_output_dir, base_name + '.srt')
             merge_srt_files(segment_srts_orig, final_srt, duration)
 
-        if output_format in ('中文SRT', '双语SRT'):
-            final_zh_srt = os.path.join(final_output_dir, base_name + '.zh.srt')
+        if output_format in ('目标SRT', '双语SRT'):
+            final_zh_srt = os.path.join(final_output_dir, base_name + '.tg.srt')
             merge_srt_files(segment_srts_zh, final_zh_srt, duration)
 
         if output_format == '双语SRT':
             final_combine_srt = os.path.join(final_output_dir, base_name + '.combine.srt')
             left = os.path.join(final_output_dir, base_name + '.srt')
-            right = os.path.join(final_output_dir, base_name + '.zh.srt')
+            right = os.path.join(final_output_dir, base_name + '.tg.srt')
             if os.path.exists(left) and os.path.exists(right):
                 merge_srt_files([left, right], final_combine_srt)
 
@@ -2660,7 +2719,7 @@ class MainWorker(QObject):
                 final_lrc = os.path.join(final_output_dir, base_name + '.orig.lrc')
             merge_lrc_files(segment_lrcs_orig, final_lrc, duration)
 
-        if output_format in ('中文LRC', '双语LRC'):
+        if output_format in ('目标LRC', '双语LRC'):
             final_zh_lrc = os.path.join(final_output_dir, base_name + '.zh.lrc')
             merge_lrc_files(segment_lrcs_zh, final_zh_lrc, duration)
 
@@ -2693,7 +2752,7 @@ class MainWorker(QObject):
         param_whisper = self.master.param_whisper.toPlainText()
         param_whisper_faster = self.master.param_whisper_faster.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
-        output_format = self.master.output_format.currentText()
+        output_format = self.master.output_format.currentData()
         output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
         use_input_dir = self.master.use_input_dir_checkbox.isChecked()
         enable_segment = self.master.enable_segment_checkbox.isChecked()
@@ -2708,11 +2767,11 @@ class MainWorker(QObject):
         with open('llama/param.txt', 'w', encoding='utf-8') as f:
             f.write(param_llama)
 
-        self._emit_status("[INFO] 正在初始化项目文件夹...")
+        self._emit_status(_("status_init_project"))
         if use_input_dir:
-            self._emit_status("[INFO] 已启用“输出到音频目录”，将按每个输入文件目录输出。")
+            self._emit_status(_("status_use_input_dir"))
         else:
-            self._emit_status(f"[INFO] 输出目录：{output_dir}")
+            self._emit_status(_("status_output_dir", dir=output_dir))
 
         os.makedirs('project/cache', exist_ok=True)
         if before_dict:
@@ -2734,7 +2793,7 @@ class MainWorker(QObject):
             if os.path.exists('project/dict_after.txt'):
                 os.remove('project/dict_after.txt')
 
-        self._emit_status(f"[INFO] 当前输入：{input_files}")
+        self._emit_status(_("status_current_input", files=input_files))
 
         if input_files:
             input_files = input_files.split('\n')
@@ -2747,12 +2806,10 @@ class MainWorker(QObject):
         self.update_translation_config()
 
         target_lang = self.master.target_lang.currentData() if hasattr(self.master, 'target_lang') else 'zh-cn'
-        need_translate = translator != '不进行翻译' and not (language == 'zh' and target_lang in ('zh-cn', 'zh-tw'))
+        need_translate = translator != '不进行翻译'
         if not need_translate:
             if translator == '不进行翻译':
-                self._emit_status("[INFO] 翻译器未选择，按单文件流程跳过翻译步骤...")
-            elif language == 'zh':
-                self._emit_status("[INFO] 听写语言为中文，按单文件流程跳过翻译步骤...")
+                self._emit_status(_("status_no_translator_skip"))
 
         engine = 'ForGal-json'
         if need_translate and 'sakura' in translator:
@@ -2765,7 +2822,7 @@ class MainWorker(QObject):
             with proc_lock:
                 existing = running_procs.get(proc_name)
                 if existing and existing.poll() is None:
-                    self._emit_status(f"[WARN] 检测到进程 {proc_name} 已在运行，跳过重复启动。")
+                    self._emit_status(_("status_duplicate_proc", name=proc_name))
                     return existing, True
                 if existing:
                     self._cleanup_process(existing)
@@ -2815,7 +2872,7 @@ class MainWorker(QObject):
                 break
             if not os.path.exists(input_file):
                 if input_file.startswith('BV'):
-                    self._emit_status("[INFO] 正在下载视频...")
+                    self._emit_status(_("status_downloading_video"))
                     res = send_request(URL_VIDEO_INFO, params={'bvid': input_file})
                     download([Video(
                         bvid=res['bvid'],
@@ -2824,7 +2881,7 @@ class MainWorker(QObject):
                         up_name=res['owner']['name'],
                         cover_url=res['pic'] if res['videos'] == 1 else res['pages'][0]['pic'],
                     )], False)
-                    self._emit_status("[INFO] 视频下载完成！")
+                    self._emit_status(_("status_download_complete"))
                     title = res['title'] if res['videos'] == 1 else res['pages'][0]['part']
                     title = re.sub(r'[.:?/\\]', ' ', title).strip()
                     title = re.sub(r'\s+', ' ', title)
@@ -2835,7 +2892,7 @@ class MainWorker(QObject):
                             os.remove(target_file)
                         input_file = shutil.move(downloaded_file, target_file)
                     else:
-                        self._emit_status(f"[ERROR] 下载完成但未找到文件：{downloaded_file}")
+                        self._emit_status(_("status_download_not_found", file=downloaded_file))
                         self._stop_event.set()
                         break
 
@@ -2847,9 +2904,9 @@ class MainWorker(QObject):
                         ydl_ctx = YoutubeDL({'outtmpl': ydl_outtmpl})
 
                     with ydl_ctx as ydl:
-                        self._emit_status("[INFO] 正在下载视频...")
+                        self._emit_status(_("status_downloading_video"))
                         info = ydl.extract_info(input_file, download=True)
-                        self._emit_status("[INFO] 视频下载完成！")
+                        self._emit_status(_("status_download_complete"))
                         input_file = ydl.prepare_filename(info)
                         requested_downloads = info.get('requested_downloads') if isinstance(info, dict) else None
                         if requested_downloads and isinstance(requested_downloads[0], dict):
@@ -2861,24 +2918,24 @@ class MainWorker(QObject):
 
                     input_file = os.path.abspath(str(input_file or ''))
                     if not os.path.exists(input_file):
-                        self._emit_status(f"[ERROR] 下载完成但未找到文件：{input_file}")
+                        self._emit_status(_("status_download_not_found", file=input_file))
                         self._stop_event.set()
                         break
 
-            self._emit_status(f"[INFO] 当前处理文件：{input_file} 第{idx+1}个，共{len(input_files)}个")
+            self._emit_status(_("status_processing_file", file=input_file, idx=idx+1, total=len(input_files)))
             current_output_dir = output_dir
             if use_input_dir:
                 current_output_dir = os.path.dirname(os.path.abspath(input_file)) or output_dir
-                self._emit_status(f"[INFO] 当前文件输出目录：{current_output_dir}")
+                self._emit_status(_("status_file_output_dir", dir=current_output_dir))
 
             tf: TranscribedFile | None = None
 
             if input_file.endswith('.srt'):
                 # —— SRT 输入：直接转换 ——
-                self._emit_status("[INFO] 正在进行字幕转换...")
+                self._emit_status(_("status_srt_converting"))
                 json_path = os.path.join(transcribed_dir, os.path.basename(input_file).replace('.srt', '.json'))
                 make_prompt(input_file, json_path)
-                self._emit_status("[INFO] 字幕转换完成！")
+                self._emit_status(_("status_srt_convert_done"))
                 # 复制原始 SRT 到输出目录（供双语合并用）
                 try:
                     orig_srt_src = os.path.abspath(input_file)
@@ -2902,7 +2959,7 @@ class MainWorker(QObject):
             else:
                 # 音视频输入：提取音频 → 听写（如果已有srt则跳过）
                 if whisper_file == '不进行听写':
-                    self._emit_status("[INFO] 不进行听写，跳过听写步骤...")
+                    self._emit_status(_("status_no_transcribe_skip"))
                     continue
 
                 base_path = input_file.rsplit('.', 1)[0] if '.' in input_file else input_file
@@ -2912,7 +2969,7 @@ class MainWorker(QObject):
 
                 # 检测是否已有srt文件
                 if os.path.exists(existing_srt):
-                    self._emit_status(f"[INFO] 检测到已有字幕文件：{existing_srt}，跳过听写步骤...")
+                    self._emit_status(_("status_existing_srt_found", file=existing_srt))
                     make_prompt(existing_srt, json_path)
 
                     # 生成原文 SRT/LRC 输出（与正常听写流程一致）
@@ -2929,10 +2986,10 @@ class MainWorker(QObject):
                         if not os.path.exists(lrc_output):
                             make_lrc(json_path, lrc_output)
 
-                    self._emit_status("[INFO] 语音识别完成！（使用已有字幕）")
+                    self._emit_status(_("status_asr_done_cached"))
 
                     if need_translate:
-                        self._emit_status("[INFO] 正在提交文件进行翻译...")
+                        self._emit_status(_("status_submitting_translation"))
                         tf = TranscribedFile(
                             base_path=base_path,
                             json_src=json_path,
@@ -2943,8 +3000,8 @@ class MainWorker(QObject):
                         self._translation_pool.submit(tf)
                         continue
 
-                self._emit_status("[INFO] 正在进行音频提取...")
-                ffmpeg_proc, _ = start_named_proc(
+                self._emit_status(_("status_extracting_audio"))
+                ffmpeg_proc, _unused = start_named_proc(
                     'ffmpeg_extract',
                     ['ffmpeg/ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file]
                 )
@@ -2952,7 +3009,7 @@ class MainWorker(QObject):
                 stop_named_proc('ffmpeg_extract')
 
                 if not os.path.exists(wav_file):
-                    self._emit_status("[ERROR] 音频提取失败，请检查文件格式！")
+                    self._emit_status(_("status_audio_extract_error"))
                     break
 
                 # 检查是否启用分段处理
@@ -2964,16 +3021,16 @@ class MainWorker(QObject):
 
                 if enable_segment and segment_duration_minutes > 0 and total_duration > threshold_seconds:
                     # 需要分段处理
-                    self._emit_status(f"[INFO] 音频时长 {total_duration:.2f} 秒超过阈值 {threshold_seconds} 秒，启用分段处理...")
+                    self._emit_status(_("status_segment_threshold", duration=total_duration, threshold=threshold_seconds))
 
                     segment_dir = os.path.join('project', 'cache', 'segments', os.path.basename(base_path))
                     os.makedirs(segment_dir, exist_ok=True)
 
                     # 切分音频
-                    segment_files, _ = self._split_audio(wav_file, segment_duration_minutes, segment_dir)
+                    segment_files, _unused = self._split_audio(wav_file, segment_duration_minutes, segment_dir)
 
                     if not segment_files:
-                        self._emit_status("[ERROR] 音频切分失败")
+                        self._emit_status(_("status_segment_fail"))
                         if os.path.exists(wav_file):
                             os.remove(wav_file)
                         break
@@ -2983,18 +3040,18 @@ class MainWorker(QObject):
                     for i, segment_file in enumerate(segment_files):
                         if self._stop_event.is_set():
                             break
-                        self._emit_status(f"[INFO] 正在处理第 {i+1}/{len(segment_files)} 个音频片段的听写...")
+                        self._emit_status(_("status_segment_processing", idx=i+1, total=len(segment_files)))
 
                         segment_base = segment_file[:-4] # 去掉 .wav
                         segment_name = os.path.basename(segment_base)
 
                         if whisper_file.startswith('ggml'):
-                            whisper_proc, _ = start_named_proc(
+                            whisper_proc, _unused = start_named_proc(
                                 'whisper',
                                 [param.replace('$whisper_file',whisper_file).replace('$input_file',segment_base).replace('$language',language) for param in param_whisper.split()]
                             )
                         elif whisper_file.startswith('faster-whisper'):
-                            whisper_proc, _ = start_named_proc(
+                            whisper_proc, _unused = start_named_proc(
                                 'whisper_faster',
                                 [param.replace('$whisper_file',whisper_file[15:]).replace('$input_file',segment_base).replace('$language',language).replace('$output_dir',segment_dir) for param in param_whisper_faster.split()]
                             )
@@ -3012,7 +3069,7 @@ class MainWorker(QObject):
 
                         # 立即提交该分段进行翻译
                         if need_translate:
-                            self._emit_status(f"[INFO] 正在提交第 {i+1}/{len(segment_files)} 个片段进行翻译...")
+                            self._emit_status(_("status_segment_submit_translate", idx=i+1, total=len(segment_files)))
                             segment_tf = TranscribedFile(
                                 base_path=segment_base,
                                 json_src=segment_json,
@@ -3025,21 +3082,21 @@ class MainWorker(QObject):
 
                     # 等待所有分段翻译完成
                     if need_translate and segment_tfs:
-                        self._emit_status("[INFO] 等待所有分段翻译完成...")
+                        self._emit_status(_("status_wait_segments"))
                         self._translation_pool.done()
                         self._translation_pool.wait_all(timeout=600)
 
                     # 合并所有片段的翻译结果
-                    self._emit_status("[INFO] 合并分段翻译结果...")
+                    self._emit_status(_("status_merge_segments"))
                     self._merge_segment_translations(segment_files, segment_tfs, base_path, json_path, current_output_dir, output_format, threshold_seconds)
 
-                    self._emit_status("[INFO] 分段听写完成并合并！")
+                    self._emit_status(_("status_segment_done"))
 
                     # 分段处理已完成，跳过常规流程
                     tf = None
                 else:
                     # 正常流程（未启用分段）
-                    self._emit_status("[INFO] 正在进行语音识别...")
+                    self._emit_status(_("status_asr_in_progress"))
                     self._process_single_audio(wav_file, whisper_file, language, param_whisper, param_whisper_faster, json_path, start_named_proc, stop_named_proc)
 
                     # 生成原文 SRT/LRC 输出
@@ -3058,7 +3115,7 @@ class MainWorker(QObject):
                     if os.path.exists(wav_file):
                         os.remove(wav_file)
 
-                    self._emit_status("[INFO] 语音识别完成！")
+                    self._emit_status(_("status_asr_done"))
 
                     tf = TranscribedFile(
                         base_path=base_path,
@@ -3072,14 +3129,14 @@ class MainWorker(QObject):
                 self._translation_pool.submit(tf)
 
         # 发送哨兵，等待翻译线程结束
-        self._emit_status("[INFO] 所有文件听写完成，等待翻译线程处理剩余文件...")
+        self._emit_status(_("status_all_transcribed"))
         self._translation_pool.done()
         self._translation_pool.wait_all(timeout=600)
         self._translation_pool.stop()
 
         err_count = self._translation_pool.error_count
         if err_count > 0:
-            self._emit_status(f"[WARN] {err_count} 个文件翻译失败，请检查日志。")
+            self._emit_status(_("status_translate_fail_count", count=err_count))
 
         # 完成屏障：先排空消息队列，再放入完成哨兵
         # 确保所有翻译日志在"所有文件处理完成"之前被 GUI 消费
