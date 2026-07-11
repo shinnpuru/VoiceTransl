@@ -1,5 +1,5 @@
 # ASRLabs
-asrlabs @ git+https://github.com/MurthiNext/ASRLabs.git@v1.0
+asrlabs[ctc] @ git+https://github.com/MurthiNext/ASRLabs.git@v1.0
 
 # VoiceTransl
 httpx<0.28

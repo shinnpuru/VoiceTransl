@@ -2809,7 +2809,7 @@ class MainWorker(QObject):
         align_device = self.master.align_device_combo.currentText()
         align_extra = self.master.align_extra_edit.toPlainText()
 
-        output_dir = os.path.dirname(json_path)
+        output_dir = os.path.abspath(os.path.dirname(json_path))
         output_name = os.path.basename(json_path).replace('.json', '')
 
         self._emit_status(_("status_asrlabs_transcribing", engine=asr_engine, audio=os.path.basename(wav_file)))
