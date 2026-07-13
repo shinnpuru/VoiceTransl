@@ -2849,6 +2849,8 @@ class MainWorker(QObject):
                 align_device=align_device,
                 transcribe_extra=asr_extra,
                 align_extra=align_extra,
+                split_logic='punct',
+                max_chars=40,
                 output_dir=output_dir,
                 output_name=output_name,
                 msg_queue=self.msg_queue,

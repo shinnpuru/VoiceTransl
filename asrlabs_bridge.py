@@ -283,6 +283,43 @@ def convert_to_galtransl_json(asrlabs_json_path: str, output_path: str):
         json.dump(galtransl_data, f, ensure_ascii=False, indent=4)
 
 
+def convert_json(
+    json_path: str,
+    logic: str,
+    max_chars: int,
+    msg_queue,
+    stop_event,
+) -> str:
+    """调用 asrlabs convert -f json 对 JSON 进行分句后处理（原地覆盖）
+
+    主要逻辑:
+      1. 调用 asrlabs convert <json> -f json -l <logic> --max-chars <n>
+      2. asrlabs 读取 JSON → apply_split_logic → 保存为 JSON（原地覆盖）
+      3. 返回处理后 JSON 路径（与输入相同）
+
+    Args:
+        json_path: 待后处理的 ASRLabs JSON 文件路径
+        logic: 分句逻辑 "punct" 或 "pysbd"
+        max_chars: 单条最大字符数
+        msg_queue: UIMessageQueue 实例
+        stop_event: threading.Event
+
+    Returns:
+        处理后的 JSON 文件路径（与输入相同，原地覆盖）
+    """
+    output_dir = os.path.dirname(json_path)
+    output_name = os.path.basename(json_path).replace('.json', '')
+
+    cmd = [*_ASRLABS_CMD, 'convert', json_path,
+           '-f', 'json',
+           '-l', logic,
+           '--max-chars', str(max_chars),
+           '-d', output_dir,
+           '-o', output_name]
+
+    return _run_with_log(cmd, msg_queue, stop_event, output_dir, output_name)
+
+
 def run_transcribe_and_align(
     audio_path: str,
     engine: str,
@@ -295,21 +332,25 @@ def run_transcribe_and_align(
     align_device: str,
     transcribe_extra: str,
     align_extra: str,
+    split_logic: str,
+    max_chars: int,
     output_dir: str,
     output_name: str,
     msg_queue,
     stop_event,
 ) -> str:
-    """完整的听写+对齐流程，返回 GalTransl JSON 路径
+    """完整的听写+对齐+后处理流程，返回 GalTransl JSON 路径
 
     主要逻辑：
     1. 调用 asrlabs transcribe → 产出 ASRLabs JSON
-    2. 如果 aligner 不为 "none" 且引擎无内置时间戳 → 调用 asrlabs align
-       如果 aligner 不为 "none" 但引擎已有时间戳 → 仍可二次对齐（用户选择）
-    3. 将最终 JSON 转为 GalTransl 格式
+    2. 如果 aligner 不为 "none" → 调用 asrlabs align（覆盖同一 JSON）
+    3. 调用 asrlabs convert -f json → 分句后处理（原地覆盖，仅切分 segments 不改格式）
+    4. 将后处理后的 JSON 转为 GalTransl 格式
 
     Args:
         aligner: 对齐器名称，"none" 表示跳过对齐
+        split_logic: 分句逻辑 "punct" 或 "pysbd"
+        max_chars: 单条字幕最大字符数（0=不限制）
         其余参数同 transcribe() / align()
 
     Returns:
@@ -329,7 +370,13 @@ def run_transcribe_and_align(
             align_extra, msg_queue, stop_event,
         )
 
-    # 步骤 3：转为 GalTransl 格式
+    # 步骤 3：分句后处理（asrlabs convert -f json，原地覆盖）
+    if max_chars > 0 or split_logic:
+        asrlabs_json = convert_json(
+            asrlabs_json, split_logic, max_chars, msg_queue, stop_event,
+        )
+
+    # 步骤 4：转为 GalTransl 格式
     galtransl_json = os.path.join(output_dir, output_name + '.galtransl.json')
     convert_to_galtransl_json(asrlabs_json, galtransl_json)
 
