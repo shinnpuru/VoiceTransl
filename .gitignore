@@ -1,32 +1,33 @@
+# Python
 __pycache__/
 desktop/
+build/
+dist/
+*venv*/
+python_embeded/
 *.pyc
-*.bin
-log.txt
-config.txt
+
+# Misc
+*.log
+project/
 .env
 gui_settings.yaml
-# VSCode
+*.dll
+*.exe
 .vscode
 useful_tools/GalTransl_DumpInjector/config.ini
 useful_tools/GalTransl_DumpInjector/VNTextPatch/names.xml
-*.log
-venv*/
-project/
-python_embeded/
+
+# Models
 *.gguf
 faster-whisper*/
-build/
-dist/
 translate/
-whisper-faster/whisper-faster.exe
-*.dll
-*.exe
-# Python venv
-.venv
+whisper-faster/
+
 # Faster Whisper XXL
 _xxl_data
 project/config.yaml
+
 # Tests
-Tests
-separate/
+tests
+separate
