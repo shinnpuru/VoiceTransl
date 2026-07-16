@@ -996,6 +996,7 @@ class MainWindow(QMainWindow):
                 widget.installEventFilter(self)
 
     def initUI(self):
+        os.makedirs('separate', exist_ok=True)
         self.initAboutTab()
         self.initInputOutputTab()
         self.initClipTab()
