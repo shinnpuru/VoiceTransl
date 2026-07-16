@@ -64,8 +64,8 @@ TRANSLATOR_SUPPORTED = [
 ] + list(ONLINE_TRANSLATOR_MAPPING.keys())
 
 # redirect sys.stdout and sys.stderr to one log file
-LOG_PATH = 'log.txt'
-sys.stdout = open(LOG_PATH, 'w', encoding='GBK')
+LOG_PATH = 'log.log'
+sys.stdout = open(LOG_PATH, 'w', encoding='utf-8')
 sys.stderr = sys.stdout
 
 # ANSI 转义序列正则（覆盖 CSI、OSC、前景/背景色等）
@@ -90,7 +90,7 @@ class UIMessageQueue:
     _DRAIN_POLL_INTERVAL = 0.1   # drain_all 轮询间隔（秒）
     _DRAIN_MAX_WAIT = 3.0        # drain_all 最长等待（秒）
 
-    def __init__(self, log_path: str = 'log.txt'):
+    def __init__(self, log_path: str = 'log.log'):
         self._queue: queue.Queue = queue.Queue(maxsize=self._MAX_SIZE)
         self._log_path = log_path
         self._file_lock = threading.Lock()
@@ -107,7 +107,7 @@ class UIMessageQueue:
         if cleaned.strip():
             with self._file_lock:
                 try:
-                    with open(self._log_path, 'a', encoding='GBK', errors='replace') as f:
+                    with open(self._log_path, 'a', encoding='utf-8', errors='replace') as f:
                         f.write(cleaned + '\n')
                 except Exception:
                     pass
