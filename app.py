@@ -6,6 +6,31 @@ os.chdir(sys._MEIPASS) if _FROZEN else os.chdir(os.path.dirname(os.path.abspath(
 _TRANSLATE_CMD = ['translate/translate'] if _FROZEN else [sys.executable, 'translate.py']
 _SEPARATE_CMD = ['separate/separate'] if _FROZEN else [sys.executable, 'separate.py']
 import shutil
+
+def _resolve_ffmpeg() -> tuple[str, str]:
+    """解析 ffmpeg/ffprobe 路径"""
+    if os.name == 'nt':
+        _ffmpeg = 'ffmpeg/ffmpeg.exe'
+        _ffprobe = 'ffmpeg/ffprobe.exe'
+    else:
+        _ffmpeg = 'ffmpeg/ffmpeg'
+        _ffprobe = 'ffmpeg/ffprobe'
+
+    # 优先使用本地 ffmpeg 目录
+    if not os.path.exists(_ffmpeg):
+        # 回退检查系统 PATH
+        _ffmpeg = shutil.which('ffmpeg') or _ffmpeg
+        _ffprobe = shutil.which('ffprobe') or _ffprobe
+
+    if not os.path.exists(_ffmpeg):
+        raise RuntimeError(
+            '未找到 ffmpeg，请将 ffmpeg.exe 放置在 ffmpeg 目录中，'
+            '或安装 ffmpeg 并添加到系统 PATH 环境变量'
+        )
+
+    return _ffmpeg, _ffprobe
+
+_FFMPEG, _FFPROBE = _resolve_ffmpeg()
 from i18n import _, set_language, get_language
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal, QTimer, QDateTime, QSize
@@ -2578,12 +2603,12 @@ class MainWorker(QObject):
                     if subtitle_font:
                         self._emit_status(_("status_synth_font", font=subtitle_font))
                     self._emit_status(_("status_synth_hard_sub"))
-                    proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', output_file])
+                    proc = self._start_process([_FFMPEG, '-y', '-i', input_file, '-vf', subtitle_filter, '-vcodec', 'libx264', '-acodec', 'aac', output_file])
                 else:
                     self._emit_status(_("status_synth_soft_sub"))
                     # For soft subtitles, we just map the streams.
                     # Depending on the container and subtitle format, -c:s mov_text works for mp4.
-                    proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-i', input_srt, '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'mov_text', output_file])
+                    proc = self._start_process([_FFMPEG, '-y', '-i', input_file, '-i', input_srt, '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'mov_text', output_file])
 
                 proc.wait()
                 self._cleanup_process(proc)
@@ -2610,7 +2635,7 @@ class MainWorker(QObject):
 
                 self._emit_status(_("status_processing_file", file=input_file, idx=idx+1, total=len(input_files)))
                 self._emit_status(_("status_clip_processing", start=clip_start, end=clip_end))
-                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]])
+                proc = self._start_process([_FFMPEG, '-y', '-i', input_file, '-ss', clip_start, '-to', clip_end, '-vcodec', 'libx264', '-acodec', 'aac', os.path.join(*(input_file.split('.')[:-1]))+'_clip.'+input_file.split('.')[-1]])
                 proc.wait()
                 self._cleanup_process(proc)
                 self._emit_status(_("status_clip_done"))
@@ -2642,7 +2667,7 @@ class MainWorker(QObject):
                     self.finished.emit()
 
                 self._emit_status(_("status_processing_file", file=audio_input, idx=idx+1, total=len(image_files)))
-                proc = self._start_process(['ffmpeg/ffmpeg', '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'], label='ffmpeg')
+                proc = self._start_process([_FFMPEG, '-y', '-loop', '1', '-r', '1', '-f', 'image2', '-i', image_input, '-i', audio_input, '-shortest', '-vcodec', 'libx264', '-acodec', 'aac', audio_input+'_synth.mp4'], label='ffmpeg')
                 proc.wait()
                 self._cleanup_process(proc)
                 self._emit_status(_("status_synth_done"))
@@ -2688,7 +2713,7 @@ class MainWorker(QObject):
         try:
             creationflags = 0x08000000 if os.name == 'nt' else 0
             result = subprocess.run(
-                ['ffmpeg/ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                [_FFPROBE, '-v', 'error', '-show_entries', 'format=duration',
                  '-of', 'default=noprint_wrappers=1:nokey=1', audio_file],
                 capture_output=True, text=True, timeout=30, creationflags=creationflags
             )
@@ -2721,7 +2746,7 @@ class MainWorker(QObject):
             try:
                 creationflags = 0x08000000 if os.name == 'nt' else 0
                 proc = subprocess.run(
-                    ['ffmpeg/ffmpeg', '-y', '-i', audio_file, '-ss', str(start_time),
+                    [_FFMPEG, '-y', '-i', audio_file, '-ss', str(start_time),
                      '-t', str(duration), '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', segment_file],
                     capture_output=True, timeout=120, creationflags=creationflags
                 )
@@ -3080,7 +3105,7 @@ class MainWorker(QObject):
                 self._emit_status(_("status_extracting_audio"))
                 ffmpeg_proc, _unused = start_named_proc(
                     'ffmpeg_extract',
-                    ['ffmpeg/ffmpeg', '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file]
+                    [_FFMPEG, '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file]
                 )
                 ffmpeg_proc.wait()
                 stop_named_proc('ffmpeg_extract')
