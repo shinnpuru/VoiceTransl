@@ -71,8 +71,8 @@ TRANSLATOR_SUPPORTED = [
 ] + list(ONLINE_TRANSLATOR_MAPPING.keys())
 
 # redirect sys.stdout and sys.stderr to one log file
-LOG_PATH = 'log.txt'
-sys.stdout = open(LOG_PATH, 'w', encoding='GBK')
+LOG_PATH = 'log.log'
+sys.stdout = open(LOG_PATH, 'w', encoding='utf-8')
 sys.stderr = sys.stdout
 
 # ANSI 转义序列正则（覆盖 CSI、OSC、前景/背景色等）
@@ -97,7 +97,7 @@ class UIMessageQueue:
     _DRAIN_POLL_INTERVAL = 0.1   # drain_all 轮询间隔（秒）
     _DRAIN_MAX_WAIT = 3.0        # drain_all 最长等待（秒）
 
-    def __init__(self, log_path: str = 'log.txt'):
+    def __init__(self, log_path: str = 'log.log'):
         self._queue: queue.Queue = queue.Queue(maxsize=self._MAX_SIZE)
         self._log_path = log_path
         self._file_lock = threading.Lock()
@@ -114,7 +114,7 @@ class UIMessageQueue:
         if cleaned.strip():
             with self._file_lock:
                 try:
-                    with open(self._log_path, 'a', encoding='GBK', errors='replace') as f:
+                    with open(self._log_path, 'a', encoding='utf-8', errors='replace') as f:
                         f.write(cleaned + '\n')
                 except Exception:
                     pass
@@ -1329,6 +1329,10 @@ class MainWindow(QMainWindow):
                 self._log_level_filter = log_filter
             if hasattr(self, 'verbose_checkbox'):
                 self.verbose_checkbox.setChecked(gui_settings.get('verbose_mode', False))
+            if hasattr(self, 'target_lang'):
+                _tl_idx = self.target_lang.findData(gui_settings.get('target_translation_lang', 'zh-cn'))
+                if _tl_idx >= 0:
+                    self.target_lang.setCurrentIndex(_tl_idx)
 
             # ── ASRLabs 配置加载 + 旧配置迁移 ──
             # 旧配置迁移：检测 whisper_file → 迁移模型文件 → 清理旧目录（须在刷新引擎列表之前）
@@ -1708,7 +1712,9 @@ class MainWindow(QMainWindow):
         self.io_transcription_lang_label = BodyLabel(_("io_transcription_lang_label"))
         lang_layout.addWidget(self.io_transcription_lang_label)
         self.transcription_lang = QComboBox()
-        self.transcription_lang.addItems(['ja', 'en', 'ko', 'ru', 'fr', 'zh'])
+        TRANS_LANG_CODES = ['ja', 'en', 'ko', 'ru', 'fr', 'zh']
+        for code in TRANS_LANG_CODES:
+            self.transcription_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), userData=code)
         lang_layout.addWidget(self.transcription_lang)
         lang_layout.addStretch()
 
@@ -2442,7 +2448,10 @@ class MainWorker(QObject):
         if 'common' not in cfg:
             cfg['common'] = {}
         target_lang = self.master.target_lang.currentData() if hasattr(self.master, 'target_lang') else 'zh-cn'
-        cfg['common']['language'] = target_lang
+        source_lang = self.master.input_lang.currentText() if hasattr(self.master, 'input_lang') else 'ja'
+        if source_lang == 'zh':
+            source_lang = 'zh-cn'
+        cfg['common']['language'] = f"{source_lang}2{target_lang}"
 
         # Update backendSpecific configuration
         if 'backendSpecific' not in cfg:
