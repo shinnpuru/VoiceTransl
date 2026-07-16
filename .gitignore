@@ -1,6 +1,11 @@
 # Python
+# Python
 __pycache__/
 desktop/
+build/
+dist/
+*venv*/
+python_embeded/
 build/
 dist/
 *venv*/
@@ -8,25 +13,19 @@ python_embeded/
 *.pyc
 
 # Misc
-*.log
 project/
+.vscode/
+*.log
 .env
 gui_settings.yaml
 *.dll
 *.exe
-.vscode
 useful_tools/GalTransl_DumpInjector/config.ini
 useful_tools/GalTransl_DumpInjector/VNTextPatch/names.xml
 
 # Models
+models/
 *.gguf
-faster-whisper*/
-translate/
-whisper-faster/
-
-# Faster Whisper XXL
-_xxl_data
-project/config.yaml
 
 # Tests
 tests
