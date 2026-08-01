@@ -32,7 +32,7 @@ TRANSLATIONS = {
             "- 分离工具：分离视频中的人声和伴奏，切分音频文件。\n"
             "- 合成工具：将音频和图片合成为视频，将字幕文件加入视频。\n"
             "- 总结工具：对字幕文件内容进行总结，生成带时间戳的摘要。\n"
-            "- 语音模型：选择Whisper或Faster Whisper模型，设置听写语言和参数，选择伴奏分离模型。\n"
+            "- 语音模型：选择CrispASR模型，设置听写语言和附加参数，选择伴奏分离模型。\n"
             "- 语言模型：选择翻译模型类别，配置在线模型令牌、地址和名称。\n"
             "- 字典设置：配置翻译前、中、后使用的字典，以及额外提示信息。\n"
             "- 日志：实时查看输出信息和日志文件。"
@@ -45,7 +45,7 @@ TRANSLATIONS = {
         "about_start_btn": "🚀 开始",
 
         # === Input/Output Tab ===
-        "io_input_label": "📂 拖拽音视频/SRT文件，或输入B站BV号、YouTube及其他视频链接（每行一个）。路径请勿包含非英文和空格。",
+        "io_input_label": "📂 拖拽音视频/SRT文件，或输入B站BV号、YouTube及其他视频链接（每行一个）。",
         "io_input_placeholder": "例如：C:/video.mp4或https://www.youtube.com/watch?v=...或BV1Lxt5e8EJF",
         "io_proxy_label": "🌐 设置代理地址以便下载视频和翻译。",
         "io_proxy_placeholder": "例如：http://127.0.0.1:7890，留空为不使用",
@@ -92,14 +92,11 @@ TRANSLATIONS = {
         "dict_prompt_mode_overwrite": "覆盖",
 
         # === Settings Tab (Speech) ===
-        "settings_whisper_label": "🗣️ 选择用于语音识别的模型文件。",
+        "settings_asr_model_label": "🗣️ 选择CrispASR语音识别模型文件。",
         "settings_lang_label": "🌍 选择输入的语言。(ja=日语，en=英语，ko=韩语，ru=俄语，fr=法语，zh=中文）",
-        "settings_whisper_param_label": "🔧 输入Whisper命令行参数。(CPU，A卡，I卡，Mac，Linux)",
-        "settings_whisper_param_placeholder": "每个参数空格隔开，请参考Whisper.cpp文档，不清楚请保持默认。",
-        "settings_faster_param_label": "🔧 输入Whisper-Faster命令行参数。(N卡)",
-        "settings_faster_param_placeholder": "每个参数空格隔开，请参考Faster Whisper文档，不清楚请保持默认。",
-        "settings_open_whisper_btn": "📁 打开Whisper目录",
-        "settings_open_faster_btn": "📁 打开Faster Whisper目录",
+        "settings_asr_param_label": "🔧 CrispASR命令模板（保存于crispasr/param.txt）。",
+        "settings_asr_param_placeholder": "支持占位符：$crispasr_executable、$model_file、$aligner_file、$language、$output_file、$input_file。",
+        "settings_open_crispasr_btn": "📁 打开CrispASR目录",
         "settings_refresh_speech_btn": "🔄 刷新语音模型列表",
         "settings_uvr_label": "🎤 选择用于伴奏分离的模型文件。",
         "settings_open_uvr_btn": "📁 打开UVR模型目录",
@@ -316,7 +313,7 @@ TRANSLATIONS = {
             "- Separation: Separate vocals and accompaniment from video, split audio files.\n"
             "- Synthesis: Combine audio and images into video, add subtitle files to video.\n"
             "- Summarize: Summarize subtitle content and generate timestamped abstracts.\n"
-            "- Speech Model: Select Whisper or Faster Whisper model, set transcription language and parameters, select accompaniment separation model.\n"
+            "- Speech Model: Select a CrispASR model, set the transcription language and optional arguments, and select an accompaniment separation model.\n"
             "- Language Model: Select translation model type, configure online model token, address and name.\n"
             "- Dictionary: Configure pre/mid/post translation dictionaries and extra prompts.\n"
             "- Log: View real-time output and log files."
@@ -329,7 +326,7 @@ TRANSLATIONS = {
         "about_start_btn": "🚀 Start",
 
         # === Input/Output Tab ===
-        "io_input_label": "📂 Drag audio/video/SRT files, or enter Bilibili BV number, YouTube and other video links (one per line). Avoid non-English characters and spaces in paths.",
+        "io_input_label": "📂 Drag audio/video/SRT files, or enter a Bilibili BV number, YouTube URL, or other video link (one per line).",
         "io_input_placeholder": "Example: C:/video.mp4 or https://www.youtube.com/watch?v=... or BV1Lxt5e8EJF",
         "io_proxy_label": "🌐 Set proxy address for video download and translation.",
         "io_proxy_placeholder": "Example: http://127.0.0.1:7890, leave empty to disable",
@@ -376,14 +373,11 @@ TRANSLATIONS = {
         "dict_prompt_mode_overwrite": "Overwrite",
 
         # === Settings Tab (Speech) ===
-        "settings_whisper_label": "🗣️ Select model file for speech recognition.",
+        "settings_asr_model_label": "🗣️ Select a CrispASR speech recognition model.",
         "settings_lang_label": "🌍 Select input language. (ja=Japanese, en=English, ko=Korean, ru=Russian, fr=French, zh=Chinese)",
-        "settings_whisper_param_label": "🔧 Enter Whisper command line parameters. (CPU, AMD GPU, Intel GPU, Mac, Linux)",
-        "settings_whisper_param_placeholder": "Space-separated parameters, see Whisper.cpp docs. Leave default if unsure.",
-        "settings_faster_param_label": "🔧 Enter Whisper-Faster command line parameters. (NVIDIA GPU)",
-        "settings_faster_param_placeholder": "Space-separated parameters, see Faster Whisper docs. Leave default if unsure.",
-        "settings_open_whisper_btn": "📁 Open Whisper Directory",
-        "settings_open_faster_btn": "📁 Open Faster Whisper Directory",
+        "settings_asr_param_label": "🔧 CrispASR command template (saved in crispasr/param.txt).",
+        "settings_asr_param_placeholder": "Placeholders: $crispasr_executable, $model_file, $aligner_file, $language, $output_file, and $input_file.",
+        "settings_open_crispasr_btn": "📁 Open CrispASR Directory",
         "settings_refresh_speech_btn": "🔄 Refresh Speech Model List",
         "settings_uvr_label": "🎤 Select model file for accompaniment separation.",
         "settings_open_uvr_btn": "📁 Open UVR Model Directory",
@@ -599,7 +593,7 @@ TRANSLATIONS = {
             "- 分離ツール：動画からボーカルと伴奏を分離し、音声ファイルを分割。\n"
             "- 合成ツール：音声と画像を動画に合成し、字幕ファイルを動画に追加。\n"
             "- 要約ツール：字幕ファイルの内容を要約し、タイムスタンプ付きの概要を生成。\n"
-            "- 音声モデル：WhisperまたはFaster Whisperモデルを選択し、文字起こし言語とパラメータを設定、伴奏分離モデルを選択。\n"
+            "- 音声モデル：CrispASRモデルを選択し、文字起こし言語と追加パラメータを設定、伴奏分離モデルを選択。\n"
             "- 言語モデル：翻訳モデルの種類を選択し、オンラインモデルのトークン、アドレス、名前を設定。\n"
             "- 辞書設定：翻訳前・中・後の辞書と追加プロンプト情報を設定。\n"
             "- ログ：リアルタイムの出力情報とログファイルを表示。"
@@ -612,7 +606,7 @@ TRANSLATIONS = {
         "about_start_btn": "🚀 開始",
 
         # === Input/Output Tab ===
-        "io_input_label": "📂 音声/動画/SRTファイルをドラッグするか、BilibiliのBV番号、YouTubeなどの動画リンクを入力してください（1行に1つ）。パスに非英語文字やスペースを含めないでください。",
+        "io_input_label": "📂 音声/動画/SRTファイルをドラッグするか、BilibiliのBV番号、YouTubeなどの動画リンクを入力してください（1行に1つ）。",
         "io_input_placeholder": "例：C:/video.mp4 または https://www.youtube.com/watch?v=... または BV1Lxt5e8EJF",
         "io_proxy_label": "🌐 動画ダウンロードと翻訳用のプロキシアドレスを設定。",
         "io_proxy_placeholder": "例：http://127.0.0.1:7890、空欄で無効",
@@ -659,14 +653,11 @@ TRANSLATIONS = {
         "dict_prompt_mode_overwrite": "上書き",
 
         # === Settings Tab (Speech) ===
-        "settings_whisper_label": "🗣️ 音声認識用のモデルファイルを選択。",
+        "settings_asr_model_label": "🗣️ CrispASR音声認識モデルを選択。",
         "settings_lang_label": "🌍 入力言語を選択。（ja=日本語、en=英語、ko=韓国語、ru=ロシア語、fr=フランス語、zh=中国語）",
-        "settings_whisper_param_label": "🔧 Whisperコマンドラインパラメータを入力。（CPU、AMD GPU、Intel GPU、Mac、Linux）",
-        "settings_whisper_param_placeholder": "スペース区切りのパラメータ。Whisper.cppドキュメントを参照。不明な場合はデフォルトのまま。",
-        "settings_faster_param_label": "🔧 Whisper-Fasterコマンドラインパラメータを入力。（NVIDIA GPU）",
-        "settings_faster_param_placeholder": "スペース区切りのパラメータ。Faster Whisperドキュメントを参照。不明な場合はデフォルトのまま。",
-        "settings_open_whisper_btn": "📁 Whisperディレクトリを開く",
-        "settings_open_faster_btn": "📁 Faster Whisperディレクトリを開く",
+        "settings_asr_param_label": "🔧 CrispASRコマンドテンプレート（crispasr/param.txtに保存）。",
+        "settings_asr_param_placeholder": "プレースホルダー：$crispasr_executable、$model_file、$aligner_file、$language、$output_file、$input_file。",
+        "settings_open_crispasr_btn": "📁 CrispASRディレクトリを開く",
         "settings_refresh_speech_btn": "🔄 音声モデルリストを更新",
         "settings_uvr_label": "🎤 伴奏分離用のモデルファイルを選択。",
         "settings_open_uvr_btn": "📁 UVRモデルディレクトリを開く",

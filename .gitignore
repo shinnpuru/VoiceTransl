@@ -29,4 +29,6 @@ _xxl_data
 project/config.yaml
 # Tests
 Tests
+tests/
 separate/
+crispasr

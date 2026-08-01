@@ -1,0 +1,1 @@
+$crispasr_executable --backend qwen3-1.7b --model $model_file --aligner-model $aligner_file --force-aligner --split-on-punct --split-on-word --max-len 24 --language $language --output-srt --output-file $output_file --file $input_file

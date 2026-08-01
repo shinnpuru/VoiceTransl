@@ -6,6 +6,8 @@ os.chdir(sys._MEIPASS) if _FROZEN else os.chdir(os.path.dirname(os.path.abspath(
 _TRANSLATE_CMD = ['translate/translate'] if _FROZEN else [sys.executable, 'translate.py']
 _SEPARATE_CMD = ['separate/separate'] if _FROZEN else [sys.executable, 'separate.py']
 import shutil
+import shlex
+import tempfile
 
 def _resolve_ffmpeg() -> tuple[str, str]:
     """解析 ffmpeg/ffprobe 路径"""
@@ -57,6 +59,65 @@ from bilibili_dl.bilibili_dl.downloader import download
 from bilibili_dl.bilibili_dl.utils import send_request
 from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from pathlib import Path
+
+
+NO_TRANSCRIPTION = '不进行听写'
+
+
+def _list_crispasr_models():
+    model_dir = Path('crispasr')
+    if not model_dir.is_dir():
+        return []
+    return sorted(
+        path.name for path in model_dir.glob('*.gguf')
+        if 'aligner' not in path.name.lower() and 'alignment' not in path.name.lower()
+    )
+
+
+def _split_command_template(value):
+    if os.name != 'nt':
+        return shlex.split(value)
+    tokens = shlex.split(value, posix=False)
+    return [
+        token[1:-1] if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'" else token
+        for token in tokens
+    ]
+
+
+def _build_crispasr_command(input_file, output_file, model_file, language, param_crispasr):
+    """按 param.txt 模板替换占位符，生成与旧 Whisper 相同风格的启动参数。"""
+    crispasr_dir = Path('crispasr').resolve()
+    executable_name = 'crispasr.exe' if os.name == 'nt' else 'crispasr'
+    executable = crispasr_dir / executable_name
+    aligners = sorted(crispasr_dir.glob('*aligner*.gguf'))
+    if not executable.is_file():
+        raise FileNotFoundError(f'CrispASR executable not found: {executable}')
+    if not aligners:
+        raise FileNotFoundError(f'CrispASR aligner model not found in: {crispasr_dir}')
+
+    model_path = Path(model_file)
+    if not model_path.is_absolute():
+        model_path = crispasr_dir / model_path
+    replacements = {
+        '$crispasr_executable': str(executable),
+        '$model_file': str(model_path.resolve()),
+        '$aligner_file': str(aligners[0].resolve()),
+        '$language': language or 'auto',
+        '$output_file': str(Path(output_file).resolve()),
+        '$input_file': str(Path(input_file).resolve()),
+    }
+    command = _split_command_template(param_crispasr)
+    for index, token in enumerate(command):
+        for placeholder, replacement in replacements.items():
+            token = token.replace(placeholder, replacement)
+        command[index] = token
+    if not command:
+        raise ValueError('CrispASR param.txt is empty')
+    return command
+
+
+def _format_command(command):
+    return subprocess.list2cmdline(command) if os.name == 'nt' else shlex.join(command)
 
 
 def open_path(path_value: str):
@@ -927,7 +988,7 @@ class MainWindow(QMainWindow):
         """保存 GUI 配置到 gui_settings.yaml 及相关文件"""
         if not silent:
             self._emit_status(_("status_reading_config"))
-        whisper_file = self.whisper_file.currentText()
+        asr_model_file = self.asr_model_file.currentText()
         translator = self.translator_group.currentText()
         language = self.input_lang.currentText()
         gpt_token = self.gpt_token.text()
@@ -951,7 +1012,7 @@ class MainWindow(QMainWindow):
         current_lang = get_language()
 
         gui_settings = {
-            'whisper_file': whisper_file,
+            'asr_model_file': asr_model_file,
             'translator': translator,
             'language': language,
             'gpt_address': gpt_address,
@@ -978,8 +1039,8 @@ class MainWindow(QMainWindow):
 
         _save_api_key(gpt_token)
 
-        with open('whisper/param.txt', 'w', encoding='utf-8') as f:
-            f.write(self.param_whisper.toPlainText())
+        with open('crispasr/param.txt', 'w', encoding='utf-8') as f:
+            f.write(self.param_crispasr.toPlainText())
 
         with open('llama/param.txt', 'w', encoding='utf-8') as f:
             f.write(self.param_llama.toPlainText())
@@ -1139,18 +1200,13 @@ class MainWindow(QMainWindow):
         return unique
 
     def refresh_speech_model_lists(self):
-        if hasattr(self, 'whisper_file'):
-            current_whisper = self.whisper_file.currentText()
-            whisper_lst = [
-                i for i in os.listdir('whisper')
-                if i.startswith('ggml') and i.endswith('bin') and 'silero' not in i
-            ] + [
-                i for i in os.listdir('whisper-faster') if i.startswith('faster-whisper')
-            ] + ['不进行听写']
-            self.whisper_file.clear()
-            self.whisper_file.addItems(whisper_lst)
-            if current_whisper in whisper_lst:
-                self.whisper_file.setCurrentText(current_whisper)
+        if hasattr(self, 'asr_model_file'):
+            current_model = self.asr_model_file.currentText()
+            asr_models = _list_crispasr_models() + [NO_TRANSCRIPTION]
+            self.asr_model_file.clear()
+            self.asr_model_file.addItems(asr_models)
+            if current_model in asr_models:
+                self.asr_model_file.setCurrentText(current_model)
 
         if hasattr(self, 'uvr_file'):
             current_uvr = self.uvr_file.currentText()
@@ -1197,7 +1253,7 @@ class MainWindow(QMainWindow):
         _save_api_key(gpt_token)
 
         gui_settings = {
-            'whisper_file': lines[0].strip(),
+            'asr_model_file': lines[0].strip(),
             'translator': lines[1].strip(),
             'language': lines[2].strip(),
             'gpt_address': lines[4].strip(),
@@ -1233,8 +1289,9 @@ class MainWindow(QMainWindow):
             gui_settings = self._migrate_config_txt()
 
         if gui_settings:
-            if self.whisper_file and gui_settings.get('whisper_file'):
-                self.whisper_file.setCurrentText(gui_settings['whisper_file'])
+            saved_asr_model = gui_settings.get('asr_model_file') or gui_settings.get('whisper_file')
+            if self.asr_model_file and saved_asr_model:
+                self.asr_model_file.setCurrentText(saved_asr_model)
             self.translator_group.setCurrentText(gui_settings.get('translator', ''))
             self.input_lang.setCurrentText(gui_settings.get('language', ''))
             self.gpt_address.setText(gui_settings.get('gpt_address', ''))
@@ -1289,13 +1346,9 @@ class MainWindow(QMainWindow):
 
         self.update_output_dir_controls()
 
-        if os.path.exists('whisper/param.txt'):
-            with open('whisper/param.txt', 'r', encoding='utf-8') as f:
-                self.param_whisper.setPlainText(f.read())
-
-        if os.path.exists('whisper-faster/param.txt'):
-            with open('whisper-faster/param.txt', 'r', encoding='utf-8') as f:
-                self.param_whisper_faster.setPlainText(f.read())
+        if os.path.exists('crispasr/param.txt'):
+            with open('crispasr/param.txt', 'r', encoding='utf-8') as f:
+                self.param_crispasr.setPlainText(f.read())
 
         if os.path.exists('llama/param.txt'):
             with open('llama/param.txt', 'r', encoding='utf-8') as f:
@@ -1771,13 +1824,12 @@ class MainWindow(QMainWindow):
         self.settings_tab = Widget("Settings", self)
         self.settings_layout = self.settings_tab.vBoxLayout
         
-        # Whisper Section
-        self.settings_whisper_label = BodyLabel(_("settings_whisper_label"))
-        self.settings_layout.addWidget(self.settings_whisper_label)
-        self.whisper_file = QComboBox()
-        whisper_lst = [i for i in os.listdir('whisper') if i.startswith('ggml') and i.endswith('bin') and not 'silero' in i] + [i for i in os.listdir('whisper-faster') if i.startswith('faster-whisper')] + ['不进行听写']
-        self.whisper_file.addItems(whisper_lst)
-        self.settings_layout.addWidget(self.whisper_file)
+        # CrispASR Section
+        self.settings_asr_model_label = BodyLabel(_("settings_asr_model_label"))
+        self.settings_layout.addWidget(self.settings_asr_model_label)
+        self.asr_model_file = QComboBox()
+        self.asr_model_file.addItems(_list_crispasr_models() + [NO_TRANSCRIPTION])
+        self.settings_layout.addWidget(self.asr_model_file)
 
         self.settings_lang_label = BodyLabel(_("settings_lang_label"))
         self.settings_layout.addWidget(self.settings_lang_label)
@@ -1785,26 +1837,17 @@ class MainWindow(QMainWindow):
         self.input_lang.addItems(['ja','en','ko','ru','fr','zh'])
         self.settings_layout.addWidget(self.input_lang)
 
-        self.settings_whisper_param_label = BodyLabel(_("settings_whisper_param_label"))
-        self.settings_layout.addWidget(self.settings_whisper_param_label)
-        self.param_whisper = QTextEdit()
-        self.param_whisper.setPlaceholderText(_("settings_whisper_param_placeholder"))
-        self.settings_layout.addWidget(self.param_whisper)
-
-        self.settings_faster_param_label = BodyLabel(_("settings_faster_param_label"))
-        self.settings_layout.addWidget(self.settings_faster_param_label)
-        self.param_whisper_faster = QTextEdit()
-        self.param_whisper_faster.setPlaceholderText(_("settings_faster_param_placeholder"))
-        self.settings_layout.addWidget(self.param_whisper_faster)
+        self.settings_asr_param_label = BodyLabel(_("settings_asr_param_label"))
+        self.settings_layout.addWidget(self.settings_asr_param_label)
+        self.param_crispasr = QTextEdit()
+        self.param_crispasr.setPlaceholderText(_("settings_asr_param_placeholder"))
+        self.settings_layout.addWidget(self.param_crispasr)
 
         button_layout = QHBoxLayout()
 
-        self.open_whisper_dir = QPushButton(_("settings_open_whisper_btn"))
-        self.open_whisper_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'whisper')))
-        self.open_faster_dir = QPushButton(_("settings_open_faster_btn"))
-        self.open_faster_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'whisper-faster')))
-        button_layout.addWidget(self.open_whisper_dir)
-        button_layout.addWidget(self.open_faster_dir)
+        self.open_crispasr_dir = QPushButton(_("settings_open_crispasr_btn"))
+        self.open_crispasr_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(), 'crispasr')))
+        button_layout.addWidget(self.open_crispasr_dir)
 
         self.refresh_speech_models_button = QPushButton(_("settings_refresh_speech_btn"))
         self.refresh_speech_models_button.clicked.connect(self.refresh_speech_model_lists)
@@ -2674,39 +2717,40 @@ class MainWorker(QObject):
             
         self.finished.emit()
 
-    def _process_single_audio(self, wav_file, whisper_file, language, param_whisper, param_whisper_faster, json_path, start_named_proc, stop_named_proc):
-        """处理单个音频文件的听写"""
+    def _process_single_audio(self, wav_file, asr_model_file, language, param_crispasr, json_path, start_named_proc, stop_named_proc):
+        """使用 CrispASR + forced aligner 处理单个音频文件。"""
         base_path = wav_file[:-4]  # 去掉 .wav
-
-        if whisper_file.startswith('ggml'):
-            self.msg_queue.put("detail", param_whisper)
-            whisper_proc, _unused = start_named_proc(
-                'whisper',
-                [param.replace('$whisper_file',whisper_file).replace('$input_file',base_path).replace('$language',language) for param in param_whisper.split()]
-            )
-        elif whisper_file.startswith('faster-whisper'):
-            self.msg_queue.put("detail", param_whisper_faster)
-            whisper_proc, _unused = start_named_proc(
-                'whisper_faster',
-                [param.replace('$whisper_file',whisper_file[15:]).replace('$input_file',base_path).replace('$language',language).replace('$output_dir',os.path.dirname(wav_file)) for param in param_whisper_faster.split()]
-            )
-        else:
-            return
-        whisper_proc.wait()
-        if whisper_file.startswith('ggml'):
-            stop_named_proc('whisper')
-        else:
-            stop_named_proc('whisper_faster')
-
-        # 转换该片段的SRT到JSON，完成后清理中间文件
         intermediate_srt = base_path + '.srt'
-        make_prompt(intermediate_srt, json_path)
-        # 清理 whisper 产出的中间 .16k.srt 文件
-        if intermediate_srt.endswith('.16k.srt') and os.path.exists(intermediate_srt):
-            try:
-                os.remove(intermediate_srt)
-            except Exception:
-                pass
+        work_root = Path('project/cache/crispasr_jobs').resolve()
+        work_root.mkdir(parents=True, exist_ok=True)
+        work_dir = Path(tempfile.mkdtemp(prefix='job_', dir=work_root))
+        staged_input = work_dir / f'input{Path(wav_file).suffix.lower()}'
+        output_base = work_dir / 'transcript'
+        generated_srt = output_base.with_suffix('.srt')
+        try:
+            shutil.copyfile(wav_file, staged_input)
+            command = _build_crispasr_command(
+                staged_input, output_base, asr_model_file, language, param_crispasr
+            )
+            self.msg_queue.put("detail", _format_command(command))
+            asr_proc, _unused = start_named_proc('crispasr', command)
+            return_code = asr_proc.wait()
+            stop_named_proc('crispasr')
+            if return_code != 0:
+                raise RuntimeError(f'CrispASR exited with code {return_code}')
+            if not generated_srt.is_file() or generated_srt.stat().st_size == 0:
+                raise RuntimeError('CrispASR did not produce a non-empty SRT file')
+            shutil.copyfile(generated_srt, intermediate_srt)
+            make_prompt(intermediate_srt, json_path)
+        finally:
+            stop_named_proc('crispasr')
+            shutil.rmtree(work_dir, ignore_errors=True)
+            # 单文件流程中的 16k SRT 只是中间产物。
+            if intermediate_srt.endswith('.16k.srt') and os.path.exists(intermediate_srt):
+                try:
+                    os.remove(intermediate_srt)
+                except Exception:
+                    pass
 
     def _get_audio_duration(self, audio_file):
         """获取音频文件时长（秒）"""
@@ -2842,7 +2886,7 @@ class MainWorker(QObject):
         
         self.save_config()
         input_files = self.master.input_files_list.toPlainText()
-        whisper_file = self.master.whisper_file.currentText()
+        asr_model_file = self.master.asr_model_file.currentText()
         translator = self.master.translator_group.currentText()
         language = self.master.input_lang.currentText()
         sakura_file = self.master.sakura_file.currentText()
@@ -2851,8 +2895,7 @@ class MainWorker(QObject):
         before_dict = self.master.before_dict.toPlainText()
         gpt_dict = self.master.gpt_dict.toPlainText()
         after_dict = self.master.after_dict.toPlainText()
-        param_whisper = self.master.param_whisper.toPlainText()
-        param_whisper_faster = self.master.param_whisper_faster.toPlainText()
+        param_crispasr = self.master.param_crispasr.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
         output_format = self.master.output_format.currentData()
         output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
@@ -2860,11 +2903,8 @@ class MainWorker(QObject):
         enable_segment = self.master.enable_segment_checkbox.isChecked()
         segment_duration_minutes = self.master.segment_duration_spin.value() if enable_segment else 0
 
-        with open('whisper/param.txt', 'w', encoding='utf-8') as f:
-            f.write(param_whisper)
-
-        with open('whisper-faster/param.txt', 'w', encoding='utf-8') as f:
-            f.write(param_whisper_faster)
+        with open('crispasr/param.txt', 'w', encoding='utf-8') as f:
+            f.write(param_crispasr)
 
         with open('llama/param.txt', 'w', encoding='utf-8') as f:
             f.write(param_llama)
@@ -3060,7 +3100,7 @@ class MainWorker(QObject):
                 )
             else:
                 # 音视频输入：提取音频 → 听写（如果已有srt则跳过）
-                if whisper_file == '不进行听写':
+                if asr_model_file == NO_TRANSCRIPTION:
                     self._emit_status(_("status_no_transcribe_skip"))
                     continue
 
@@ -3147,27 +3187,16 @@ class MainWorker(QObject):
                         segment_base = segment_file[:-4] # 去掉 .wav
                         segment_name = os.path.basename(segment_base)
 
-                        if whisper_file.startswith('ggml'):
-                            whisper_proc, _unused = start_named_proc(
-                                'whisper',
-                                [param.replace('$whisper_file',whisper_file).replace('$input_file',segment_base).replace('$language',language) for param in param_whisper.split()]
-                            )
-                        elif whisper_file.startswith('faster-whisper'):
-                            whisper_proc, _unused = start_named_proc(
-                                'whisper_faster',
-                                [param.replace('$whisper_file',whisper_file[15:]).replace('$input_file',segment_base).replace('$language',language).replace('$output_dir',segment_dir) for param in param_whisper_faster.split()]
-                            )
-                        else:
-                            break
-                        whisper_proc.wait()
-                        if whisper_file.startswith('ggml'):
-                            stop_named_proc('whisper')
-                        else:
-                            stop_named_proc('whisper_faster')
-
-                        # 转换该片段的SRT到JSON
                         segment_json = os.path.join(transcribed_dir, segment_name + '.json')
-                        make_prompt(segment_base + '.srt', segment_json)
+                        self._process_single_audio(
+                            segment_file,
+                            asr_model_file,
+                            language,
+                            param_crispasr,
+                            segment_json,
+                            start_named_proc,
+                            stop_named_proc,
+                        )
 
                         # 立即提交该分段进行翻译
                         if need_translate:
@@ -3199,7 +3228,15 @@ class MainWorker(QObject):
                 else:
                     # 正常流程（未启用分段）
                     self._emit_status(_("status_asr_in_progress"))
-                    self._process_single_audio(wav_file, whisper_file, language, param_whisper, param_whisper_faster, json_path, start_named_proc, stop_named_proc)
+                    self._process_single_audio(
+                        wav_file,
+                        asr_model_file,
+                        language,
+                        param_crispasr,
+                        json_path,
+                        start_named_proc,
+                        stop_named_proc,
+                    )
 
                     # 生成原文 SRT/LRC 输出
                     if output_format == '原文SRT' or output_format == '双语SRT':
