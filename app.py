@@ -62,6 +62,7 @@ from pathlib import Path
 
 
 NO_TRANSCRIPTION = '不进行听写'
+NO_TRANSLATION = '不进行翻译'
 
 
 def _list_crispasr_models():
@@ -74,6 +75,60 @@ def _list_crispasr_models():
     )
 
 
+def _list_crispasr_aligners():
+    model_dir = Path('crispasr')
+    if not model_dir.is_dir():
+        return []
+    return sorted(
+        path.name for path in model_dir.glob('*.gguf')
+        if 'aligner' in path.name.lower() or 'alignment' in path.name.lower()
+    )
+
+
+def _list_crispasr_backends():
+    """Return speech-recognition backends advertised by the local binary."""
+    fallback = [
+        'whisper', 'parakeet', 'canary', 'cohere', 'qwen3', 'qwen3-1.7b',
+        'mega-asr', 'voxtral', 'voxtral4b', 'granite',
+    ]
+    crispasr_dir = Path('crispasr').resolve()
+    executable_name = 'crispasr.exe' if os.name == 'nt' else 'crispasr'
+    executable = crispasr_dir / executable_name
+    if not executable.is_file():
+        return fallback
+
+    try:
+        result = subprocess.run(
+            [str(executable), '--list-backends-json'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=10,
+            creationflags=0x08000000 if os.name == 'nt' else 0,
+            check=False,
+        )
+        payload = json.loads(result.stdout)
+        non_asr_caps = {'tts', 's2s', 'separate', 'pitch', 'chords', 'beats', 'tab', 'piano'}
+        asr_caps = {
+            'timestamps-native', 'timestamps-ctc', 'word-timestamps',
+            'token-confidence', 'language-detect', 'diarize',
+        }
+        backends = []
+        for entry in payload.get('backends', []):
+            name = str(entry.get('name', '')).strip()
+            caps = set(entry.get('caps') or [])
+            if name and caps.intersection(asr_caps) and not (
+                caps.intersection(non_asr_caps) and not caps.intersection({'timestamps-ctc', 'word-timestamps'})
+            ):
+                backends.append(name)
+        if backends:
+            return list(dict.fromkeys(backends))
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        pass
+    return fallback
+
+
 def _split_command_template(value):
     if os.name != 'nt':
         return shlex.split(value)
@@ -84,24 +139,55 @@ def _split_command_template(value):
     ]
 
 
-def _build_crispasr_command(input_file, output_file, model_file, language, param_crispasr):
+def _set_command_option(command, option_names, preferred_option, value):
+    """Set an option in a split command, appending it when the template omits it."""
+    for index, token in enumerate(command):
+        if token in option_names:
+            if index + 1 < len(command):
+                command[index + 1] = value
+            else:
+                command.append(value)
+            return
+        for option_name in option_names:
+            if token.startswith(option_name + '='):
+                command[index] = f'{preferred_option}={value}'
+                return
+    command.extend([preferred_option, value])
+
+
+def _build_crispasr_command(
+    input_file, output_file, model_file, language, param_crispasr,
+    aligner_file=None, backend=None,
+):
     """按 param.txt 模板替换占位符，生成与旧 Whisper 相同风格的启动参数。"""
     crispasr_dir = Path('crispasr').resolve()
     executable_name = 'crispasr.exe' if os.name == 'nt' else 'crispasr'
     executable = crispasr_dir / executable_name
-    aligners = sorted(crispasr_dir.glob('*aligner*.gguf'))
     if not executable.is_file():
         raise FileNotFoundError(f'CrispASR executable not found: {executable}')
-    if not aligners:
-        raise FileNotFoundError(f'CrispASR aligner model not found in: {crispasr_dir}')
 
     model_path = Path(model_file)
     if not model_path.is_absolute():
         model_path = crispasr_dir / model_path
+
+    if aligner_file:
+        aligner_path = Path(aligner_file)
+        if not aligner_path.is_absolute():
+            aligner_path = crispasr_dir / aligner_path
+    else:
+        aligners = _list_crispasr_aligners()
+        if not aligners:
+            raise FileNotFoundError(f'CrispASR aligner model not found in: {crispasr_dir}')
+        aligner_path = crispasr_dir / aligners[0]
+    if not aligner_path.is_file():
+        raise FileNotFoundError(f'CrispASR aligner model not found: {aligner_path}')
+
+    selected_backend = str(backend or 'qwen3-1.7b').strip() or 'qwen3-1.7b'
     replacements = {
         '$crispasr_executable': str(executable),
         '$model_file': str(model_path.resolve()),
-        '$aligner_file': str(aligners[0].resolve()),
+        '$aligner_file': str(aligner_path.resolve()),
+        '$backend': selected_backend,
         '$language': language or 'auto',
         '$output_file': str(Path(output_file).resolve()),
         '$input_file': str(Path(input_file).resolve()),
@@ -113,6 +199,8 @@ def _build_crispasr_command(input_file, output_file, model_file, language, param
         command[index] = token
     if not command:
         raise ValueError('CrispASR param.txt is empty')
+    _set_command_option(command, ('--backend',), '--backend', selected_backend)
+    _set_command_option(command, ('--aligner-model', '-am'), '--aligner-model', str(aligner_path.resolve()))
     return command
 
 
@@ -144,10 +232,24 @@ ONLINE_TRANSLATOR_MAPPING = {
 }
 
 TRANSLATOR_SUPPORTED = [
-    '不进行翻译',
     "custom（自定义模型）",
     "sakura（日语本地模型）",
 ] + list(ONLINE_TRANSLATOR_MAPPING.keys())
+
+
+def _compose_output_format(content_type, file_type, enable_translation):
+    """Build a valid output format for the actions selected on the input tab."""
+    if not enable_translation:
+        content_type = '原文'
+    return f'{content_type}{file_type}'
+
+
+def _split_output_format(output_format):
+    """Split values such as ``双语SRT`` without assuming a fixed suffix width."""
+    for file_type in ('SRT', 'LRC'):
+        if output_format.endswith(file_type):
+            return output_format[:-len(file_type)], file_type
+    return output_format, ''
 
 # redirect sys.stdout and sys.stderr to one log file
 LOG_PATH = 'log.log'
@@ -989,6 +1091,8 @@ class MainWindow(QMainWindow):
         if not silent:
             self._emit_status(_("status_reading_config"))
         asr_model_file = self.asr_model_file.currentText()
+        aligner_file = self.aligner_file.currentText()
+        asr_backend = self.asr_backend.currentText()
         translator = self.translator_group.currentText()
         language = self.input_lang.currentText()
         gpt_token = self.gpt_token.text()
@@ -1006,6 +1110,8 @@ class MainWindow(QMainWindow):
         os.makedirs(output_dir, exist_ok=True)
         enable_segment = self.enable_segment_checkbox.isChecked()
         segment_duration = self.segment_duration_spin.value()
+        enable_transcription = self.enable_transcription_checkbox.isChecked()
+        enable_translation = self.enable_translation_checkbox.isChecked()
         change_prompt_mode = self.change_prompt_mode.currentData() if hasattr(self, 'change_prompt_mode') else '不修改'
         auto_shutdown = self.auto_shutdown_checkbox.isChecked() if hasattr(self, 'auto_shutdown_checkbox') else False
         target_translation_lang = self.target_lang.currentData() if hasattr(self, 'target_lang') else 'zh-cn'
@@ -1013,6 +1119,8 @@ class MainWindow(QMainWindow):
 
         gui_settings = {
             'asr_model_file': asr_model_file,
+            'aligner_file': aligner_file,
+            'asr_backend': asr_backend,
             'translator': translator,
             'language': language,
             'gpt_address': gpt_address,
@@ -1028,6 +1136,8 @@ class MainWindow(QMainWindow):
             'max_concurrent': self.max_concurrent_spin.value(),
             'enable_segment': enable_segment,
             'segment_duration': segment_duration,
+            'enable_transcription': enable_transcription,
+            'enable_translation': enable_translation,
             'change_prompt_mode': change_prompt_mode,
             'log_level_filter': self.log_filter_combo.currentText(),
             'verbose_mode': self.verbose_checkbox.isChecked(),
@@ -1130,6 +1240,13 @@ class MainWindow(QMainWindow):
         enabled = self.enable_segment_checkbox.isChecked() if hasattr(self, 'enable_segment_checkbox') else False
         self.segment_duration_spin.setEnabled(enabled)
 
+    def update_processing_controls(self):
+        """Keep language controls aligned with the actions selected on the input tab."""
+        if hasattr(self, 'transcription_lang'):
+            self.transcription_lang.setEnabled(self.enable_transcription_checkbox.isChecked())
+        if hasattr(self, 'target_lang'):
+            self.target_lang.setEnabled(self.enable_translation_checkbox.isChecked())
+
     def _normalize_drop_paths(self, mime_data):
         paths = []
         try:
@@ -1202,11 +1319,29 @@ class MainWindow(QMainWindow):
     def refresh_speech_model_lists(self):
         if hasattr(self, 'asr_model_file'):
             current_model = self.asr_model_file.currentText()
-            asr_models = _list_crispasr_models() + [NO_TRANSCRIPTION]
+            asr_models = _list_crispasr_models()
             self.asr_model_file.clear()
             self.asr_model_file.addItems(asr_models)
             if current_model in asr_models:
                 self.asr_model_file.setCurrentText(current_model)
+
+        if hasattr(self, 'aligner_file'):
+            current_aligner = self.aligner_file.currentText()
+            aligners = _list_crispasr_aligners()
+            self.aligner_file.clear()
+            self.aligner_file.addItems(aligners)
+            if current_aligner in aligners:
+                self.aligner_file.setCurrentText(current_aligner)
+
+        if hasattr(self, 'asr_backend'):
+            current_backend = self.asr_backend.currentText()
+            backends = _list_crispasr_backends()
+            self.asr_backend.clear()
+            self.asr_backend.addItems(backends)
+            if current_backend in backends:
+                self.asr_backend.setCurrentText(current_backend)
+            elif 'qwen3-1.7b' in backends:
+                self.asr_backend.setCurrentText('qwen3-1.7b')
 
         if hasattr(self, 'uvr_file'):
             current_uvr = self.uvr_file.currentText()
@@ -1255,6 +1390,8 @@ class MainWindow(QMainWindow):
         gui_settings = {
             'asr_model_file': lines[0].strip(),
             'translator': lines[1].strip(),
+            'enable_transcription': lines[0].strip() != NO_TRANSCRIPTION,
+            'enable_translation': lines[1].strip() != NO_TRANSLATION,
             'language': lines[2].strip(),
             'gpt_address': lines[4].strip(),
             'gpt_model': lines[5].strip(),
@@ -1290,9 +1427,25 @@ class MainWindow(QMainWindow):
 
         if gui_settings:
             saved_asr_model = gui_settings.get('asr_model_file') or gui_settings.get('whisper_file')
-            if self.asr_model_file and saved_asr_model:
+            enable_transcription = gui_settings.get(
+                'enable_transcription', saved_asr_model != NO_TRANSCRIPTION
+            )
+            if self.asr_model_file and saved_asr_model and saved_asr_model != NO_TRANSCRIPTION:
                 self.asr_model_file.setCurrentText(saved_asr_model)
-            self.translator_group.setCurrentText(gui_settings.get('translator', ''))
+            saved_aligner = gui_settings.get('aligner_file')
+            if saved_aligner:
+                self.aligner_file.setCurrentText(saved_aligner)
+            saved_backend = gui_settings.get('asr_backend', 'qwen3-1.7b')
+            if saved_backend:
+                self.asr_backend.setCurrentText(saved_backend)
+            saved_translator = gui_settings.get('translator', '')
+            enable_translation = gui_settings.get(
+                'enable_translation', saved_translator != NO_TRANSLATION
+            )
+            if saved_translator and saved_translator != NO_TRANSLATION:
+                self.translator_group.setCurrentText(saved_translator)
+            self.enable_transcription_checkbox.setChecked(bool(enable_transcription))
+            self.enable_translation_checkbox.setChecked(bool(enable_translation))
             self.input_lang.setCurrentText(gui_settings.get('language', ''))
             self.gpt_address.setText(gui_settings.get('gpt_address', ''))
             self.gpt_model.setText(gui_settings.get('gpt_model', ''))
@@ -1345,6 +1498,7 @@ class MainWindow(QMainWindow):
             self.output_dir_edit.setText(self.default_output_dir())
 
         self.update_output_dir_controls()
+        self.update_processing_controls()
 
         if os.path.exists('crispasr/param.txt'):
             with open('crispasr/param.txt', 'r', encoding='utf-8') as f:
@@ -1681,6 +1835,20 @@ class MainWindow(QMainWindow):
         lang_layout.addWidget(self.target_lang)
         self.input_output_layout.addLayout(lang_layout)
 
+        # Processing Actions
+        processing_layout = QHBoxLayout()
+        self.enable_transcription_checkbox = QCheckBox(_("io_enable_transcription_checkbox"))
+        self.enable_transcription_checkbox.setChecked(True)
+        self.enable_transcription_checkbox.stateChanged.connect(self.update_processing_controls)
+        processing_layout.addWidget(self.enable_transcription_checkbox)
+        processing_layout.addStretch()
+        self.enable_translation_checkbox = QCheckBox(_("io_enable_translation_checkbox"))
+        self.enable_translation_checkbox.setChecked(False)
+        self.enable_translation_checkbox.stateChanged.connect(self.update_processing_controls)
+        processing_layout.addWidget(self.enable_translation_checkbox)
+        processing_layout.addStretch()
+        self.input_output_layout.addLayout(processing_layout)
+
         # Input Section (local files or URLs)
         self.io_input_label = BodyLabel(_("io_input_label"))
         self.input_output_layout.addWidget(self.io_input_label)
@@ -1828,8 +1996,22 @@ class MainWindow(QMainWindow):
         self.settings_asr_model_label = BodyLabel(_("settings_asr_model_label"))
         self.settings_layout.addWidget(self.settings_asr_model_label)
         self.asr_model_file = QComboBox()
-        self.asr_model_file.addItems(_list_crispasr_models() + [NO_TRANSCRIPTION])
+        self.asr_model_file.addItems(_list_crispasr_models())
         self.settings_layout.addWidget(self.asr_model_file)
+
+        self.settings_asr_aligner_label = BodyLabel(_("settings_asr_aligner_label"))
+        self.settings_layout.addWidget(self.settings_asr_aligner_label)
+        self.aligner_file = QComboBox()
+        self.aligner_file.addItems(_list_crispasr_aligners())
+        self.settings_layout.addWidget(self.aligner_file)
+
+        self.settings_asr_backend_label = BodyLabel(_("settings_asr_backend_label"))
+        self.settings_layout.addWidget(self.settings_asr_backend_label)
+        self.asr_backend = QComboBox()
+        self.asr_backend.addItems(_list_crispasr_backends())
+        if self.asr_backend.findText('qwen3-1.7b') >= 0:
+            self.asr_backend.setCurrentText('qwen3-1.7b')
+        self.settings_layout.addWidget(self.asr_backend)
 
         self.settings_lang_label = BodyLabel(_("settings_lang_label"))
         self.settings_layout.addWidget(self.settings_lang_label)
@@ -2717,7 +2899,10 @@ class MainWorker(QObject):
             
         self.finished.emit()
 
-    def _process_single_audio(self, wav_file, asr_model_file, language, param_crispasr, json_path, start_named_proc, stop_named_proc):
+    def _process_single_audio(
+        self, wav_file, asr_model_file, aligner_file, asr_backend, language,
+        param_crispasr, json_path, start_named_proc, stop_named_proc,
+    ):
         """使用 CrispASR + forced aligner 处理单个音频文件。"""
         base_path = wav_file[:-4]  # 去掉 .wav
         intermediate_srt = base_path + '.srt'
@@ -2730,7 +2915,8 @@ class MainWorker(QObject):
         try:
             shutil.copyfile(wav_file, staged_input)
             command = _build_crispasr_command(
-                staged_input, output_base, asr_model_file, language, param_crispasr
+                staged_input, output_base, asr_model_file, language, param_crispasr,
+                aligner_file=aligner_file, backend=asr_backend,
             )
             self.msg_queue.put("detail", _format_command(command))
             asr_proc, _unused = start_named_proc('crispasr', command)
@@ -2887,6 +3073,8 @@ class MainWorker(QObject):
         self.save_config()
         input_files = self.master.input_files_list.toPlainText()
         asr_model_file = self.master.asr_model_file.currentText()
+        aligner_file = self.master.aligner_file.currentText()
+        asr_backend = self.master.asr_backend.currentText()
         translator = self.master.translator_group.currentText()
         language = self.master.input_lang.currentText()
         sakura_file = self.master.sakura_file.currentText()
@@ -2897,11 +3085,15 @@ class MainWorker(QObject):
         after_dict = self.master.after_dict.toPlainText()
         param_crispasr = self.master.param_crispasr.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
-        output_format = self.master.output_format.currentData()
+        selected_output_format = self.master.output_format.currentData()
         output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
         use_input_dir = self.master.use_input_dir_checkbox.isChecked()
         enable_segment = self.master.enable_segment_checkbox.isChecked()
         segment_duration_minutes = self.master.segment_duration_spin.value() if enable_segment else 0
+        enable_transcription = self.master.enable_transcription_checkbox.isChecked()
+        need_translate = self.master.enable_translation_checkbox.isChecked()
+        output_content, output_type = _split_output_format(selected_output_format)
+        output_format = _compose_output_format(output_content, output_type, need_translate)
 
         with open('crispasr/param.txt', 'w', encoding='utf-8') as f:
             f.write(param_crispasr)
@@ -2944,14 +3136,14 @@ class MainWorker(QObject):
 
         os.makedirs('project/cache', exist_ok=True)
 
-        # 统一刷新翻译配置
-        self.update_translation_config()
-
         target_lang = self.master.target_lang.currentData() if hasattr(self.master, 'target_lang') else 'zh-cn'
-        need_translate = translator != '不进行翻译'
-        if not need_translate:
-            if translator == '不进行翻译':
-                self._emit_status(_("status_no_translator_skip"))
+        if need_translate:
+            # 仅在本次任务需要翻译时刷新翻译配置。
+            self.update_translation_config()
+        else:
+            self._emit_status(_("status_no_translator_skip"))
+        if not enable_transcription:
+            self._emit_status(_("status_no_transcribe_skip"))
 
         engine = 'ForGal-json'
         if need_translate and 'sakura' in translator:
@@ -2998,15 +3190,17 @@ class MainWorker(QObject):
         # 同步详细日志模式设置到翻译线程池
         ConcurrentTranslationPool.verbose_galtransl = self.master.verbose_checkbox.isChecked()
 
-        self._translation_pool = ConcurrentTranslationPool(
-            project_dir='project',
-            base_config_path='project/config.yaml',
-            max_concurrent=max_concurrent,
-            stop_event=self._stop_event,
-            msg_queue=self.msg_queue,
-            local_model_config=local_model_config,
-        )
-        self._translation_pool.start(engine)
+        self._translation_pool = None
+        if need_translate:
+            self._translation_pool = ConcurrentTranslationPool(
+                project_dir='project',
+                base_config_path='project/config.yaml',
+                max_concurrent=max_concurrent,
+                stop_event=self._stop_event,
+                msg_queue=self.msg_queue,
+                local_model_config=local_model_config,
+            )
+            self._translation_pool.start(engine)
 
         # 主线程：顺序执行下载+听写，产出放入队列
         for idx, input_file in enumerate(input_files):
@@ -3087,8 +3281,9 @@ class MainWorker(QObject):
                 except Exception:
                     pass
                 # 原文 LRC（双语 LRC 需要）
-                if output_format == '双语LRC':
-                    lrc_output = os.path.join(current_output_dir, os.path.basename(input_file[:-4] + '.orig.lrc'))
+                if output_format in ('原文LRC', '双语LRC'):
+                    lrc_suffix = '.orig.lrc' if output_format == '双语LRC' else '.lrc'
+                    lrc_output = os.path.join(current_output_dir, os.path.basename(input_file[:-4] + lrc_suffix))
                     make_lrc(json_path, lrc_output)
                 base_path = input_file[:-4]  # 去掉 .srt
                 tf = TranscribedFile(
@@ -3100,8 +3295,7 @@ class MainWorker(QObject):
                 )
             else:
                 # 音视频输入：提取音频 → 听写（如果已有srt则跳过）
-                if asr_model_file == NO_TRANSCRIPTION:
-                    self._emit_status(_("status_no_transcribe_skip"))
+                if not enable_transcription:
                     continue
 
                 base_path = input_file.rsplit('.', 1)[0] if '.' in input_file else input_file
@@ -3191,6 +3385,8 @@ class MainWorker(QObject):
                         self._process_single_audio(
                             segment_file,
                             asr_model_file,
+                            aligner_file,
+                            asr_backend,
                             language,
                             param_crispasr,
                             segment_json,
@@ -3231,6 +3427,8 @@ class MainWorker(QObject):
                     self._process_single_audio(
                         wav_file,
                         asr_model_file,
+                        aligner_file,
+                        asr_backend,
                         language,
                         param_crispasr,
                         json_path,
@@ -3264,18 +3462,19 @@ class MainWorker(QObject):
                         orig_srt_path='',
                     )
 
-            if tf is not None:
+            if need_translate and tf is not None:
                 self._translation_pool.submit(tf)
 
         # 发送哨兵，等待翻译线程结束
         self._emit_status(_("status_all_transcribed"))
-        self._translation_pool.done()
-        self._translation_pool.wait_all(timeout=600)
-        self._translation_pool.stop()
+        if self._translation_pool is not None:
+            self._translation_pool.done()
+            self._translation_pool.wait_all(timeout=600)
+            self._translation_pool.stop()
 
-        err_count = self._translation_pool.error_count
-        if err_count > 0:
-            self._emit_status(_("status_translate_fail_count", count=err_count))
+            err_count = self._translation_pool.error_count
+            if err_count > 0:
+                self._emit_status(_("status_translate_fail_count", count=err_count))
 
         # 完成屏障：先排空消息队列，再放入完成哨兵
         # 确保所有翻译日志在"所有文件处理完成"之前被 GUI 消费
