@@ -36,9 +36,17 @@ _FFMPEG, _FFPROBE = _resolve_ffmpeg()
 from i18n import _, set_language, get_language
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import Qt, QThread, QObject, pyqtSignal, QTimer, QDateTime, QSize
-from PyQt5.QtWidgets import QApplication, QVBoxLayout, QFileDialog, QFrame, QSystemTrayIcon, QMenu, QAction, QHBoxLayout, QCheckBox, QDialog, QLabel, QWidget
-from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, LineEdit as QLineEdit, ComboBox as QComboBox, Slider as QSlider, FluentWindow as QMainWindow, PlainTextEdit as QPlainTextEdit, SplashScreen, SpinBox as QSpinBox
-from qfluentwidgets import FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel
+from PyQt5.QtWidgets import (
+    QApplication, QVBoxLayout, QFileDialog, QFrame, QSystemTrayIcon, QMenu,
+    QAction, QHBoxLayout, QCheckBox, QDialog, QLabel, QWidget, QLayout,
+    QStackedWidget,
+)
+from qfluentwidgets import PushButton as QPushButton, TextEdit as QTextEdit, LineEdit as QLineEdit, ComboBox as QComboBox, Slider as QSlider, PlainTextEdit as QPlainTextEdit, SplashScreen, SpinBox as QSpinBox
+from qfluentwidgets import (
+    FluentIcon, NavigationItemPosition, SubtitleLabel, TitleLabel, BodyLabel,
+    FluentWindow as QMainWindow, TabBar, ScrollArea,
+    SimpleCardWidget,
+)
 
 import re
 import asyncio
@@ -1193,6 +1201,7 @@ class MainWindow(QMainWindow):
 
     def initUI(self):
         os.makedirs('separate', exist_ok=True)
+        self._legacy_interfaces = []
         self.initAboutTab()
         self.initInputOutputTab()
         self.initClipTab()
@@ -1202,8 +1211,233 @@ class MainWindow(QMainWindow):
         self.initAdvancedSettingTab()
         self.initDictTab()
         self.initLogTab()
+        self._assemble_six_tab_layout()
         self._install_auto_save_signals()
         self.load_config()
+
+    def addSubInterface(self, widget, icon=None, text='', position=None):
+        """Compatibility shim for the former FluentWindow navigation API.
+
+        The individual page builders still register themselves here; the pages
+        are assembled into the six horizontal tabs after all controls exist.
+        """
+        self._legacy_interfaces.append((widget, text))
+
+    def switchTo(self, widget):
+        """Select the horizontal tab containing a legacy page widget."""
+        index = getattr(self, '_page_tab_indexes', {}).get(widget)
+        if index is not None and hasattr(self, 'main_tab_bar'):
+            self._select_main_tab(index)
+
+    @staticmethod
+    def _mirror_button(source_button, parent=None):
+        """Create a right-column action that preserves the original signal."""
+        button = QPushButton(source_button.text(), parent)
+        button.clicked.connect(source_button.click)
+        source_button.hide()
+        return button
+
+    def _make_scroll_area(self, content_widget):
+        """Wrap configuration content in a Fluent scroll area."""
+        scroll = ScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet('QScrollArea { border: none; background: transparent; }')
+        content_widget.setStyleSheet('background: transparent;')
+        if content_widget.layout():
+            content_widget.layout().setSizeConstraint(QLayout.SetMinimumSize)
+        scroll.setWidget(content_widget)
+        return scroll
+
+    def _make_split_tab(self, config_widget, action_widgets, scrollable=True):
+        """Build the shared left-configuration/right-actions tab skeleton."""
+        page = QWidget(self)
+        page.setObjectName('mainTabPage')
+        page_layout = QHBoxLayout(page)
+        page_layout.setContentsMargins(10, 10, 10, 10)
+        page_layout.setSpacing(10)
+
+        config_frame = SimpleCardWidget(page)
+        config_frame.setObjectName('tabConfigPanel')
+        config_layout = QVBoxLayout(config_frame)
+        config_layout.setContentsMargins(12, 12, 12, 12)
+        config_layout.addWidget(
+            self._make_scroll_area(config_widget) if scrollable else config_widget
+        )
+
+        action_frame = SimpleCardWidget(page)
+        action_frame.setObjectName('tabActionPanel')
+        action_frame.setMinimumWidth(190)
+        action_frame.setMaximumWidth(240)
+        action_layout = QVBoxLayout(action_frame)
+        action_layout.setContentsMargins(12, 12, 12, 12)
+        action_layout.setSpacing(8)
+        action_title = SubtitleLabel(_('tab_actions_title'))
+        action_layout.addWidget(action_title)
+        for item in action_widgets:
+            if item is None:
+                action_layout.addSpacing(10)
+            elif isinstance(item, str):
+                action_layout.addWidget(BodyLabel(item))
+            else:
+                action_layout.addWidget(self._mirror_button(item, action_frame))
+        action_layout.addStretch(1)
+
+        page_layout.addWidget(config_frame, 1)
+        page_layout.addWidget(action_frame)
+        return page
+
+    def _select_main_tab(self, index):
+        if not 0 <= index < self.main_stack.count():
+            return
+        self.main_tab_bar.setCurrentIndex(index)
+        self.main_stack.setCurrentIndex(index)
+
+    def _assemble_six_tab_layout(self):
+        """Compose the six top tabs and the tab-independent realtime output."""
+        self.setMinimumSize(960, 700)
+        self.resize(1180, 820)
+
+        central = QWidget(self)
+        central.setObjectName('sixTabRoot')
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(8)
+        self.navigationInterface.hide()
+        self.stackedWidget.addWidget(central)
+        self.stackedWidget.setCurrentWidget(central)
+
+        self.main_tab_bar = TabBar(central)
+        self.main_tab_bar.setTabsClosable(False)
+        self.main_tab_bar.setAddButtonVisible(False)
+        self.main_tab_bar.setMovable(False)
+        self.main_tab_bar.setScrollable(False)
+        self.main_tab_bar.setTabMinimumWidth(150)
+        self.main_tab_bar.setTabMaximumWidth(220)
+        root_layout.addWidget(self.main_tab_bar)
+        self.main_stack = QStackedWidget(central)
+        root_layout.addWidget(self.main_stack, 1)
+
+        welcome_page = self._make_split_tab(
+            self.about_tab,
+            [self.btn_wiki, None, self.btn_afdian, self.btn_bilibili,
+             self.btn_kofi, None, self.start_button],
+        )
+        workbench_page = self._make_split_tab(
+            self.input_output_tab,
+            [self.run_button, self.cancel_button, None,
+             self.open_output_button, self.clean_button],
+        )
+
+        # Model settings share one primary tab and one configuration region.
+        model_config = QWidget(self)
+        self.model_config = model_config
+        model_config_layout = QVBoxLayout(model_config)
+        model_config_layout.setContentsMargins(0, 0, 0, 0)
+        model_config_layout.setSpacing(10)
+        self.settings_tab.setFrameShape(QFrame.StyledPanel)
+        self.advanced_settings_tab.setFrameShape(QFrame.StyledPanel)
+        model_config_layout.addWidget(SubtitleLabel(_('models_asr_actions')))
+        model_config_layout.addWidget(self.settings_tab)
+        model_config_layout.addWidget(SubtitleLabel(_('models_translation_actions')))
+        model_config_layout.addWidget(self.advanced_settings_tab)
+        model_config_layout.addStretch(1)
+        self.settings_uvr_label.hide()
+        self.uvr_file.hide()
+        self.open_uvr_dir.hide()
+        models_page = self._make_split_tab(
+            model_config,
+            [_('models_asr_actions'), self.open_crispasr_dir,
+             self.refresh_speech_models_button, None,
+             _('models_translation_actions'), self.open_model_dir,
+             self.refresh_language_models_button, self.test_online_button],
+        )
+
+        save_dict_button = QPushButton(_('dict_save_btn'))
+        save_dict_button.clicked.connect(lambda: self.save_config(silent=False))
+        open_dict_dir_button = QPushButton(_('dict_open_dir_btn'))
+        open_dict_dir_button.clicked.connect(
+            lambda: open_path(os.path.join(os.getcwd(), 'project'))
+        )
+        dict_page = self._make_split_tab(
+            self.dict_tab, [save_dict_button, open_dict_dir_button]
+        )
+
+        # All small tools live under a single primary tab.  The selected audio
+        # separation model belongs here rather than in speech model settings.
+        tools_config = QWidget(self)
+        self.tools_config = tools_config
+        tools_layout = QVBoxLayout(tools_config)
+        tools_layout.setContentsMargins(0, 0, 0, 0)
+        uvr_row = QHBoxLayout()
+        uvr_row.addWidget(BodyLabel(_('settings_uvr_label')))
+        self.uvr_file.show()
+        uvr_row.addWidget(self.uvr_file, 1)
+        tools_layout.addLayout(uvr_row)
+        tools_layout.addWidget(SubtitleLabel(_('tab_clip')))
+        tools_layout.addWidget(self.clip_tab)
+        tools_layout.addWidget(SubtitleLabel(_('tab_synth')))
+        tools_layout.addWidget(self.synth_tab)
+        tools_layout.addWidget(SubtitleLabel(_('tab_summarize')))
+        tools_layout.addWidget(self.summarize_tab)
+        tools_layout.addStretch(1)
+        tools_page = self._make_split_tab(
+            tools_config,
+            [_('tools_file_actions'), self.synth_video_browse_btn,
+             self.synth_srt_browse_btn, None,
+             _('tools_run_actions'), self.run_clip_button,
+             self.run_uvr_button, self.run_synth_button,
+             self.run_synth_audio_button, self.run_summarize_button, None,
+             self.open_uvr_dir],
+        )
+
+        # The log tab contains persistent logs only. Realtime output is detached
+        # below and remains visible while switching among all six tabs.
+        self.log_layout.removeWidget(self.log_realtime_label)
+        self.log_layout.removeWidget(self.output_text_edit)
+        self.log_realtime_label.hide()
+        log_page = self._make_split_tab(self.log_tab, [self.open_log_button])
+
+        pages = [
+            (welcome_page, _('tab_welcome')),
+            (workbench_page, _('tab_workbench')),
+            (models_page, _('tab_models')),
+            (dict_page, _('tab_dict')),
+            (tools_page, _('tab_tools')),
+            (log_page, _('tab_log')),
+        ]
+        for index, (page, title) in enumerate(pages):
+            route_key = f'main-tab-{index}'
+            self.main_tab_bar.addTab(
+                route_key, title,
+                onClick=lambda checked=False, i=index: self._select_main_tab(i),
+            )
+            self.main_stack.addWidget(page)
+        self._select_main_tab(0)
+
+        self._page_tab_indexes = {
+            self.about_tab: 0,
+            self.input_output_tab: 1,
+            self.settings_tab: 2,
+            self.advanced_settings_tab: 2,
+            self.dict_tab: 3,
+            self.clip_tab: 4,
+            self.synth_tab: 4,
+            self.summarize_tab: 4,
+            self.log_tab: 5,
+        }
+
+        realtime_frame = SimpleCardWidget(central)
+        realtime_frame.setObjectName('realtimeOutputPanel')
+        realtime_layout = QVBoxLayout(realtime_frame)
+        realtime_layout.setContentsMargins(12, 8, 12, 10)
+        realtime_layout.setSpacing(5)
+        realtime_layout.addWidget(SubtitleLabel(_('realtime_output_title')))
+        self.output_text_edit.show()
+        self.output_text_edit.setMinimumHeight(110)
+        self.output_text_edit.setMaximumHeight(170)
+        realtime_layout.addWidget(self.output_text_edit)
+        root_layout.addWidget(realtime_frame)
 
     def browse_synth_video(self):
         files, _unused = QFileDialog.getOpenFileNames(self, _("dialog_select_video"), "", "Video Files (*.mp4 *.mkv *.avi *.mov *.flv);;All Files (*)")
@@ -2295,7 +2529,6 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
 
     def run_clip(self):
         self.thread = QThread()
@@ -2304,7 +2537,6 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.clip)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
 
     def run_synth(self):
         self.thread = QThread()
@@ -2313,7 +2545,6 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.synth)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
 
     def run_synth_audio(self):
         self.thread = QThread()
@@ -2322,7 +2553,6 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.audiosynth)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
 
     def run_vocal_split(self):
         self.thread = QThread()
@@ -2331,7 +2561,6 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.vocal_split)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
 
     def run_summarize(self):
         self.thread = QThread()
@@ -2340,7 +2569,6 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.summarize)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
 
     def show_model_selection_dialog(self, models):
         dialog = QDialog(self)
@@ -2378,7 +2606,6 @@ class MainWindow(QMainWindow):
         self.worker.show_model_dialog.connect(self.show_model_selection_dialog)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
-        self.switchTo(self.log_tab)
     
     def cleaner(self):
         self._emit_status(_("status_cleaning_intermediate"))
