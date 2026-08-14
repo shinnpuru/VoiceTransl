@@ -1,7 +1,6 @@
 # Copied from https://github.com/seanghay/uvr-mdx-infer/blob/main/separate.py
 
 import soundfile as sf
-import torch 
 import os 
 import platform
 import librosa
@@ -22,48 +21,49 @@ class ConvTDFNet:
         self.hop = hop
         self.n_bins = self.n_fft // 2 + 1
         self.chunk_size = hop * (self.dim_t - 1)
-        self.window = torch.hann_window(window_length=self.n_fft, periodic=True)
         self.target_name = target_name
         
         out_c = self.dim_c * 4 if target_name == "*" else self.dim_c
         
-        self.freq_pad = torch.zeros([1, out_c, self.n_bins - self.dim_f, self.dim_t])
+        self.freq_pad = np.zeros(
+            [1, out_c, self.n_bins - self.dim_f, self.dim_t], dtype=np.float32
+        )
         self.n = L // 2
 
     def stft(self, x):
         x = x.reshape([-1, self.chunk_size])
-        x = torch.stft(
+        x = librosa.stft(
             x,
             n_fft=self.n_fft,
             hop_length=self.hop,
-            window=self.window,
+            window="hann",
             center=True,
-            return_complex=True,
+            pad_mode="reflect",
         )
-        x = torch.view_as_real(x)
-        x = x.permute([0, 3, 1, 2])
+        x = np.stack((x.real, x.imag), axis=1)
         x = x.reshape([-1, 2, 2, self.n_bins, self.dim_t]).reshape(
             [-1, self.dim_c, self.n_bins, self.dim_t]
         )
-        return x[:, :, : self.dim_f]
+        return np.ascontiguousarray(x[:, :, : self.dim_f], dtype=np.float32)
 
     # Inversed Short-time Fourier transform (STFT).
     def istft(self, x, freq_pad=None):
         freq_pad = (
-            self.freq_pad.repeat([x.shape[0], 1, 1, 1])
+            np.repeat(self.freq_pad, x.shape[0], axis=0)
             if freq_pad is None
             else freq_pad
         )
-        x = torch.cat([x, freq_pad], -2)
+        x = np.concatenate([x, freq_pad], axis=-2)
         c = 4 * 2 if self.target_name == "*" else 2
-        x = x.reshape([-1, c, 2, self.n_bins, self.dim_t]).reshape(
-            [-1, 2, self.n_bins, self.dim_t]
-        )
-        x = x.permute([0, 2, 3, 1])
-        x = x.contiguous()
-        x = torch.view_as_complex(x)
-        x = torch.istft(
-            x, n_fft=self.n_fft, hop_length=self.hop, window=self.window, center=True
+        x = x.reshape([-1, c, 2, self.n_bins, self.dim_t])
+        x = x[:, :, 0] + 1j * x[:, :, 1]
+        x = librosa.istft(
+            x,
+            n_fft=self.n_fft,
+            hop_length=self.hop,
+            window="hann",
+            center=True,
+            length=self.chunk_size,
         )
         return x.reshape([-1, c, self.chunk_size])
 
@@ -142,37 +142,33 @@ class Predictor:
                 mix_waves.append(waves)
                 i += gen_size
             
-            mix_waves = torch.tensor(np.array(mix_waves), dtype=torch.float32)
-            
-            with torch.no_grad():
-                _ort = self.model
-                spek = model.stft(mix_waves)
-                if self.args["denoise"]:
-                    spec_pred = (
-                        -_ort.run(None, {"input": -spek.cpu().numpy()})[0] * 0.5
-                        + _ort.run(None, {"input": spek.cpu().numpy()})[0] * 0.5
-                    )
-                    tar_waves = model.istft(torch.tensor(spec_pred))
-                else:
-                    tar_waves = model.istft(
-                        torch.tensor(_ort.run(None, {"input": spek.cpu().numpy() })[0])
-                    )
-                tar_signal = (
-                    tar_waves[:, :, trim:-trim]
-                    .transpose(0, 1)
-                    .reshape(2, -1)
-                    .numpy()[:, :-pad]
+            mix_waves = np.asarray(mix_waves, dtype=np.float32)
+
+            _ort = self.model
+            spek = model.stft(mix_waves)
+            if self.args["denoise"]:
+                spec_pred = (
+                    -_ort.run(None, {"input": -spek})[0] * 0.5
+                    + _ort.run(None, {"input": spek})[0] * 0.5
                 )
+            else:
+                spec_pred = _ort.run(None, {"input": spek})[0]
+            tar_waves = model.istft(spec_pred)
+            tar_signal = (
+                tar_waves[:, :, trim:-trim]
+                .swapaxes(0, 1)
+                .reshape(2, -1)[:, :-pad]
+            )
 
-                start = 0 if mix == 0 else margin_size
-                end = None if mix == list(mixes.keys())[::-1][0] else -margin_size
-                
-                if margin_size == 0:
-                    end = None
-                
-                sources.append(tar_signal[:, start:end])
+            start = 0 if mix == 0 else margin_size
+            end = None if mix == list(mixes.keys())[::-1][0] else -margin_size
 
-                progress_bar.update(1)
+            if margin_size == 0:
+                end = None
+
+            sources.append(tar_signal[:, start:end])
+
+            progress_bar.update(1)
 
             chunked_sources.append(sources)
         _sources = np.concatenate(chunked_sources, axis=-1)
