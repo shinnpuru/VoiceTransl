@@ -7,6 +7,7 @@ _TRANSLATE_CMD = ['translate/translate'] if _FROZEN else [sys.executable, 'trans
 _SEPARATE_CMD = ['separate/separate'] if _FROZEN else [sys.executable, 'separate.py']
 import shutil
 import shlex
+import socket
 import tempfile
 
 def _resolve_ffmpeg() -> tuple[str, str]:
@@ -214,6 +215,75 @@ def _build_crispasr_command(
 
 def _format_command(command):
     return subprocess.list2cmdline(command) if os.name == 'nt' else shlex.join(command)
+
+
+def _build_llama_server_command(model_file, gpu_layers, param_llama, port):
+    """Build the llama-server command used by both normal runs and self-tests."""
+    llama_dir = Path('llama').resolve()
+    model_path = Path(model_file)
+    if not model_path.is_absolute():
+        model_path = llama_dir / model_path
+    model_path = model_path.resolve()
+    if not model_path.is_file():
+        raise FileNotFoundError(f'Offline translation model not found: {model_path}')
+
+    command = _split_command_template(param_llama)
+    if not command:
+        raise ValueError('llama/param.txt is empty')
+
+    replacements = {
+        '$num_layers': str(gpu_layers or '0'),
+        '$port': str(port),
+    }
+    model_value = str(model_path)
+    for index, token in enumerate(command):
+        token = token.replace('llama/$model_file', model_value)
+        token = token.replace(r'llama\$model_file', model_value)
+        token = token.replace('$model_file', model_value)
+        for placeholder, replacement in replacements.items():
+            token = token.replace(placeholder, replacement)
+        command[index] = token
+
+    unresolved = [token for token in command if re.search(r'\$[A-Za-z_]+', token)]
+    if unresolved:
+        raise ValueError(f'Unresolved llama-server placeholders: {unresolved}')
+
+    executable = Path(command[0])
+    if not executable.is_absolute():
+        executable = Path.cwd() / executable
+    if os.name == 'nt' and not executable.is_file() and not executable.suffix:
+        executable = Path(str(executable) + '.exe')
+    if executable.is_file():
+        command[0] = str(executable.resolve())
+    elif shutil.which(command[0]) is None:
+        raise FileNotFoundError(f'llama-server executable not found: {command[0]}')
+
+    _set_command_option(command, ('--model', '-m'), '--model', model_value)
+    _set_command_option(command, ('--port',), '--port', str(port))
+    if str(gpu_layers).strip():
+        _set_command_option(
+            command, ('--n-gpu-layers', '-ngl'), '--n-gpu-layers',
+            str(gpu_layers).strip(),
+        )
+    return command
+
+
+def _find_available_local_port():
+    """Reserve an unused loopback port long enough to choose a test endpoint."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(('127.0.0.1', 0))
+        return sock.getsockname()[1]
+
+
+def _offline_asr_test_audio(language):
+    """Return the bundled speech sample matching the selected ASR language."""
+    language_code = str(language or 'ja').lower()
+    if language_code.startswith('zh'):
+        language_code = 'zh'
+    sample = Path('assets') / 'offline_model_test' / f'{language_code}.mp3'
+    if not sample.is_file():
+        sample = Path('assets') / 'offline_model_test' / 'en.mp3'
+    return sample.resolve()
 
 
 def open_path(path_value: str):
@@ -604,17 +674,21 @@ class ConcurrentTranslationPool:
             send_status(_("status_translating_with", idx=worker_idx, engine=engine, workspace=workspace))
             creationflags = 0x08000000 if os.name == 'nt' else 0
 
-            # 通过环境变量控制 GalTransl 是否跳过 _ServerStatusFilter
-            # 仅在详细模式时传递 env，非详细模式让子进程直接继承父进程环境
-            proc_env = None
+            # Force the translation subprocess and this reader to agree on
+            # UTF-8. Windows otherwise selects GBK for redirected pipes, and
+            # valid filename characters such as ♪ make logging.StreamHandler
+            # emit an internal UnicodeEncodeError traceback.
+            proc_env = os.environ.copy()
+            proc_env['PYTHONIOENCODING'] = 'utf-8'
+            proc_env['PYTHONUTF8'] = '1'
             if ConcurrentTranslationPool.verbose_galtransl:
-                proc_env = os.environ.copy()
                 proc_env['GALTRANSL_VERBOSE_STDOUT'] = '1'
 
             proc = subprocess.Popen(
                 [*_TRANSLATE_CMD, workspace, engine],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, creationflags=creationflags, bufsize=1,
+                text=True, encoding='utf-8', errors='replace',
+                creationflags=creationflags, bufsize=1,
                 env=proc_env,
             )
 
@@ -951,12 +1025,12 @@ class ConcurrentTranslationPool:
 
         port = 8989
 
-        args = [param.replace('$model_file', sakura_file).replace('$num_layers', sakura_mode).replace('$port', str(port))
-                for param in param_llama.split()]
-
         self._msg_queue.put("status", _("status_local_model_starting", port=port))
 
         try:
+            args = _build_llama_server_command(
+                sakura_file, sakura_mode, param_llama, port
+            )
             creationflags = 0x08000000 if os.name == 'nt' else 0
             expected_model = str(Path(sakura_file).name)
             proc = subprocess.Popen(
@@ -1266,7 +1340,7 @@ class MainWindow(QMainWindow):
               'adv_online_translator_label', 'online_translator_group',
               'adv_local_translator_label', 'local_translator_group'),
              'adv_translator_tip'),
-            (('adv_concurrency_label', 'max_concurrent_spin'), 'adv_concurrency_tip'),
+            (('io_concurrency_label', 'max_concurrent_spin'), 'io_concurrency_tip'),
             (('adv_online_token_label', 'gpt_token'), 'adv_online_token_placeholder'),
             (('adv_online_model_label', 'gpt_model'), 'adv_online_model_placeholder'),
             (('adv_online_address_label', 'gpt_address'), 'adv_online_address_tip'),
@@ -1465,10 +1539,11 @@ class MainWindow(QMainWindow):
         models_page = self._make_sectioned_tab(
             [
                 ('models_asr_actions', self.settings_tab,
-                 [self.open_crispasr_dir, self.refresh_speech_models_button]),
+                 [self.open_crispasr_dir, self.refresh_speech_models_button,
+                  self.test_offline_asr_button]),
                 ('models_translation_actions', self.advanced_settings_tab,
                  [self.open_model_dir, self.refresh_language_models_button,
-                  self.test_online_button]),
+                  self.test_offline_translation_button, self.test_online_button]),
             ]
         )
 
@@ -1598,7 +1673,11 @@ class MainWindow(QMainWindow):
             )
             self.transcription_lang.setEnabled(language_required)
         if hasattr(self, 'target_lang'):
-            self.target_lang.setEnabled(self.enable_translation_checkbox.isChecked())
+            translation_enabled = self.enable_translation_checkbox.isChecked()
+            self.target_lang.setEnabled(translation_enabled)
+            self.io_target_lang_label.setEnabled(translation_enabled)
+            self.max_concurrent_spin.setEnabled(translation_enabled)
+            self.io_concurrency_label.setEnabled(translation_enabled)
 
     def selected_translator(self):
         """Return the translator selected for the active online/local mode."""
@@ -1638,6 +1717,7 @@ class MainWindow(QMainWindow):
             self.adv_offline_gpu_label, self.sakura_mode,
             self.adv_offline_param_label, self.param_llama,
             self.open_model_dir, self.refresh_language_models_button,
+            self.test_offline_translation_button,
         )
         for widget in online_widgets:
             widget.setEnabled(online_mode)
@@ -2296,11 +2376,12 @@ class MainWindow(QMainWindow):
             'settings_asr_param_label': 'settings_asr_param_label',
             'open_crispasr_dir': 'settings_open_crispasr_btn',
             'refresh_speech_models_button': 'settings_refresh_speech_btn',
+            'test_offline_asr_button': 'settings_test_offline_asr_btn',
             'settings_uvr_label': 'settings_uvr_label',
             'open_uvr_dir': 'settings_open_uvr_btn',
             'refresh_uvr_models_button': 'settings_refresh_uvr_btn',
             'adv_translator_mode_label': 'adv_translator_mode_label',
-            'adv_concurrency_label': 'adv_concurrency_label',
+            'io_concurrency_label': 'io_concurrency_label',
             'adv_online_translator_label': 'adv_online_translator_label',
             'adv_local_translator_label': 'adv_local_translator_label',
             'adv_online_token_label': 'adv_online_token_label',
@@ -2311,6 +2392,7 @@ class MainWindow(QMainWindow):
             'adv_offline_param_label': 'adv_offline_param_label',
             'open_model_dir': 'adv_open_model_btn',
             'refresh_language_models_button': 'adv_refresh_model_btn',
+            'test_offline_translation_button': 'adv_test_offline_btn',
             'test_online_button': 'adv_test_api_btn',
             'clip_start_label': 'clip_start_label',
             'clip_end_label': 'clip_end_label',
@@ -2447,7 +2529,7 @@ class MainWindow(QMainWindow):
         self.enable_transcription_checkbox.setChecked(True)
         self.enable_transcription_checkbox.stateChanged.connect(self.update_processing_controls)
         transcription_layout.addWidget(self.enable_transcription_checkbox)
-        transcription_layout.addStretch(1)
+        transcription_layout.addSpacing(16)
         self.io_transcription_lang_label = BodyLabel(_("io_transcription_lang_label"))
         transcription_layout.addWidget(self.io_transcription_lang_label)
         self.transcription_lang = QComboBox()
@@ -2456,22 +2538,21 @@ class MainWindow(QMainWindow):
             self.transcription_lang.addItem(
                 _(f"target_lang_{code.replace('-', '_')}"), userData=code
             )
-        transcription_layout.addWidget(self.transcription_lang)
-        self.input_output_layout.addLayout(transcription_layout)
+        transcription_layout.addWidget(self.transcription_lang, 1)
 
-        segment_layout = QHBoxLayout()
+        transcription_layout.addSpacing(16)
         self.enable_segment_checkbox = QCheckBox(_("io_segment_checkbox"))
         self.enable_segment_checkbox.stateChanged.connect(self.update_segment_controls)
-        segment_layout.addWidget(self.enable_segment_checkbox)
+        transcription_layout.addWidget(self.enable_segment_checkbox)
         self.io_segment_duration_label = BodyLabel(_("io_segment_duration_label"))
-        segment_layout.addWidget(self.io_segment_duration_label)
+        transcription_layout.addWidget(self.io_segment_duration_label)
         self.segment_duration_spin = QSpinBox()
         self.segment_duration_spin.setRange(1, 20)
         self.segment_duration_spin.setValue(10)
         self.segment_duration_spin.setEnabled(False)
-        segment_layout.addWidget(self.segment_duration_spin)
-        segment_layout.addStretch()
-        self.input_output_layout.addLayout(segment_layout)
+        transcription_layout.addWidget(self.segment_duration_spin)
+        transcription_layout.addStretch(1)
+        self.input_output_layout.addLayout(transcription_layout)
 
         # Translation settings stay together.
         self.io_translation_group_label = SubtitleLabel(_("io_translation_group_title"))
@@ -2481,7 +2562,7 @@ class MainWindow(QMainWindow):
         self.enable_translation_checkbox.setChecked(False)
         self.enable_translation_checkbox.stateChanged.connect(self.update_processing_controls)
         translation_layout.addWidget(self.enable_translation_checkbox)
-        translation_layout.addStretch(1)
+        translation_layout.addSpacing(16)
         self.io_target_lang_label = BodyLabel(_("io_target_lang_label"))
         translation_layout.addWidget(self.io_target_lang_label)
         self.target_lang = QComboBox()
@@ -2490,7 +2571,16 @@ class MainWindow(QMainWindow):
             self.target_lang.addItem(
                 _(f"target_lang_{code.replace('-', '_')}"), userData=code
             )
-        translation_layout.addWidget(self.target_lang)
+        translation_layout.addWidget(self.target_lang, 1)
+
+        translation_layout.addSpacing(16)
+        self.io_concurrency_label = BodyLabel(_("io_concurrency_label"))
+        translation_layout.addWidget(self.io_concurrency_label)
+        self.max_concurrent_spin = QSpinBox()
+        self.max_concurrent_spin.setRange(0, 20)
+        self.max_concurrent_spin.setValue(0)
+        translation_layout.addWidget(self.max_concurrent_spin)
+        translation_layout.addStretch(1)
         self.input_output_layout.addLayout(translation_layout)
 
         # Proxy Section
@@ -2654,6 +2744,10 @@ class MainWindow(QMainWindow):
         self.refresh_speech_models_button = QPushButton(_("settings_refresh_speech_btn"))
         self.refresh_speech_models_button.clicked.connect(self.refresh_speech_model_lists)
         button_layout.addWidget(self.refresh_speech_models_button)
+
+        self.test_offline_asr_button = QPushButton(_("settings_test_offline_asr_btn"))
+        self.test_offline_asr_button.clicked.connect(self.run_test_offline_asr)
+        button_layout.addWidget(self.test_offline_asr_button)
         self.settings_layout.addLayout(button_layout)
 
         # Created here for config loading; displayed beside vocal separation.
@@ -2680,13 +2774,6 @@ class MainWindow(QMainWindow):
         self.translator_mode.addItem(_("adv_translator_mode_online"), userData='online')
         self.translator_mode.addItem(_("adv_translator_mode_local"), userData='local')
         model_row.addWidget(self.translator_mode)
-        model_row.addSpacing(20)
-        self.adv_concurrency_label = BodyLabel(_("adv_concurrency_label"))
-        model_row.addWidget(self.adv_concurrency_label)
-        self.max_concurrent_spin = QSpinBox()
-        self.max_concurrent_spin.setRange(0, 20)
-        self.max_concurrent_spin.setValue(0)
-        model_row.addWidget(self.max_concurrent_spin)
         model_row.addStretch()
         self.advanced_settings_layout.addLayout(model_row)
 
@@ -2750,6 +2837,12 @@ class MainWindow(QMainWindow):
         self.refresh_language_models_button = QPushButton(_("adv_refresh_model_btn"))
         self.refresh_language_models_button.clicked.connect(self.refresh_language_model_lists)
         button_layout.addWidget(self.refresh_language_models_button)
+
+        self.test_offline_translation_button = QPushButton(_("adv_test_offline_btn"))
+        self.test_offline_translation_button.clicked.connect(
+            self.run_test_offline_translation
+        )
+        button_layout.addWidget(self.test_offline_translation_button)
 
         self.test_online_button = QPushButton(_("adv_test_api_btn"))
         self.test_online_button.clicked.connect(self.run_test_online_api)
@@ -3017,6 +3110,53 @@ class MainWindow(QMainWindow):
         self.worker.show_model_dialog.connect(self.show_model_selection_dialog)
         self.worker.finished.connect(self.thread.quit)
         self.thread.start()
+
+    def _set_action_button_enabled(self, source_button, enabled):
+        """Keep a hidden source action and its visible mirror in sync."""
+        source_button.setEnabled(enabled)
+        for source, mirror in self._button_mirrors:
+            if source is source_button:
+                mirror.setEnabled(enabled)
+
+    def _offline_test_finished(self, source_button):
+        enabled = True
+        if source_button is self.test_offline_translation_button:
+            enabled = self.translator_mode.currentData() == 'local'
+        self._set_action_button_enabled(source_button, enabled)
+        self.thread = None
+        self.worker = None
+
+    def _start_offline_test(self, worker_slot, source_button):
+        if self.thread is not None and self.thread.isRunning():
+            self._emit_status(_("status_offline_test_busy"))
+            return
+
+        self._set_action_button_enabled(source_button, False)
+        thread = QThread(self)
+        worker = MainWorker(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker_slot(worker))
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(
+            lambda button=source_button: self._offline_test_finished(button)
+        )
+        thread.finished.connect(thread.deleteLater)
+        self.thread = thread
+        self.worker = worker
+        thread.start()
+
+    def run_test_offline_asr(self):
+        self._start_offline_test(
+            lambda worker: worker.test_offline_asr,
+            self.test_offline_asr_button,
+        )
+
+    def run_test_offline_translation(self):
+        self._start_offline_test(
+            lambda worker: worker.test_offline_translation,
+            self.test_offline_translation_button,
+        )
     
     def cleaner(self):
         self._emit_status(_("status_cleaning_intermediate"))
@@ -3305,6 +3445,141 @@ class MainWorker(QObject):
             self._emit_status(_("status_api_error", error=e))
 
         self.finished.emit()
+
+    def test_offline_asr(self):
+        """Load the selected CrispASR models and transcribe a user sample."""
+        self._stop_requested = False
+        self._stop_event.clear()
+        started_at = time()
+        proc = None
+        try:
+            language = self.master.transcription_lang.currentData() or 'ja'
+            audio_file = _offline_asr_test_audio(language)
+            if not audio_file.is_file():
+                raise FileNotFoundError(_("offline_test_audio_missing"))
+
+            model_file = self.master.asr_model_file.currentText().strip()
+            aligner_file = self.master.aligner_file.currentText().strip()
+            backend = self.master.asr_backend.currentText().strip()
+            param_crispasr = self.master.param_crispasr.toPlainText().strip()
+            if not model_file:
+                raise ValueError(_("offline_test_asr_model_missing"))
+            if not aligner_file:
+                raise ValueError(_("offline_test_aligner_missing"))
+
+            self._emit_status(_(
+                "status_offline_asr_test_starting", model=model_file
+            ))
+            with tempfile.TemporaryDirectory(prefix='voicetransl_asr_test_') as temp_dir:
+                output_base = Path(temp_dir) / 'transcript'
+                command = _build_crispasr_command(
+                    audio_file, output_base, model_file, language,
+                    param_crispasr, aligner_file=aligner_file, backend=backend,
+                )
+                self.msg_queue.put("detail", _format_command(command))
+                proc = self._start_process(command, label='CrispASR test')
+                try:
+                    return_code = proc.wait(timeout=300)
+                except subprocess.TimeoutExpired as exc:
+                    raise TimeoutError(_("offline_test_asr_timeout")) from exc
+
+                if self._stop_requested:
+                    self._emit_status(_("status_offline_test_cancelled"))
+                    return
+                if return_code != 0:
+                    raise RuntimeError(f'CrispASR exited with code {return_code}')
+
+                result_file = output_base.with_suffix('.srt')
+                if not result_file.is_file() or result_file.stat().st_size == 0:
+                    raise RuntimeError(_("offline_test_asr_no_output"))
+
+            elapsed = time() - started_at
+            self._emit_status(_(
+                "status_offline_asr_test_success", seconds=elapsed
+            ))
+        except Exception as exc:
+            if not self._stop_requested:
+                self._emit_status(_("status_offline_asr_test_failed", error=exc))
+        finally:
+            if proc is not None:
+                self._cleanup_process(proc)
+            self.finished.emit()
+
+    def test_offline_translation(self):
+        """Start llama-server and perform one real chat completion."""
+        self._stop_requested = False
+        self._stop_event.clear()
+        started_at = time()
+        proc = None
+        try:
+            model_file = self.master.sakura_file.currentText().strip()
+            gpu_layers = self.master.sakura_mode.text().strip()
+            param_llama = self.master.param_llama.toPlainText().strip()
+            if not model_file:
+                raise ValueError(_("offline_test_translation_model_missing"))
+
+            port = _find_available_local_port()
+            command = _build_llama_server_command(
+                model_file, gpu_layers, param_llama, port
+            )
+            self._emit_status(_(
+                "status_offline_translation_test_starting", model=model_file
+            ))
+            self.msg_queue.put("detail", _format_command(command))
+            proc = self._start_process(command, label='llama-server test')
+
+            session = requests.Session()
+            session.trust_env = False
+            deadline = time() + 180
+            last_error = ''
+            while time() < deadline:
+                if self._stop_requested:
+                    self._emit_status(_("status_offline_test_cancelled"))
+                    return
+                return_code = proc.poll()
+                if return_code is not None:
+                    raise RuntimeError(f'llama-server exited with code {return_code}')
+                try:
+                    response = session.post(
+                        f'http://127.0.0.1:{port}/v1/chat/completions',
+                        json={
+                            'model': Path(model_file).name,
+                            'messages': [{
+                                'role': 'user',
+                                'content': 'Reply with only: OK',
+                            }],
+                            'max_tokens': 8,
+                            'temperature': 0,
+                        },
+                        timeout=8,
+                    )
+                    if response.status_code == 200:
+                        payload = response.json()
+                        if isinstance(payload, dict) and payload.get('choices'):
+                            elapsed = time() - started_at
+                            self._emit_status(_(
+                                "status_offline_translation_test_success",
+                                seconds=elapsed,
+                            ))
+                            return
+                    last_error = f'HTTP {response.status_code}: {response.text[:200]}'
+                except requests.RequestException as exc:
+                    last_error = str(exc)
+                except ValueError as exc:
+                    last_error = str(exc)
+                sleep(1)
+
+            detail = last_error or _("offline_test_no_response")
+            raise TimeoutError(_("offline_test_translation_timeout", detail=detail))
+        except Exception as exc:
+            if not self._stop_requested:
+                self._emit_status(_(
+                    "status_offline_translation_test_failed", error=exc
+                ))
+        finally:
+            if proc is not None:
+                self._cleanup_process(proc)
+            self.finished.emit()
 
     @error_handler
     def vocal_split(self):
