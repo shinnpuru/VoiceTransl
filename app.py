@@ -1147,6 +1147,7 @@ class MainWindow(QMainWindow):
             'enable_transcription': enable_transcription,
             'enable_translation': enable_translation,
             'change_prompt_mode': change_prompt_mode,
+            'auto_shutdown': auto_shutdown,
             'log_level_filter': self.log_filter_combo.currentText(),
             'verbose_mode': self.verbose_checkbox.isChecked(),
             'ui_language': current_lang,
@@ -1641,6 +1642,7 @@ class MainWindow(QMainWindow):
             'enable_segment': (lines[15].strip().lower() == 'true') if len(lines) > 15 else False,
             'segment_duration': int(lines[16].strip()) if len(lines) > 16 else 10,
             'change_prompt_mode': lines[17].strip() if len(lines) > 17 else '不修改',
+            'auto_shutdown': (lines[18].strip().lower() == 'true') if len(lines) > 18 else False,
         }
 
         with open('gui_settings.yaml', 'w', encoding='utf-8') as f:
@@ -1711,6 +1713,8 @@ class MainWindow(QMainWindow):
                 _pm_idx = self.change_prompt_mode.findData(change_prompt_mode)
                 if _pm_idx >= 0:
                     self.change_prompt_mode.setCurrentIndex(_pm_idx)
+            if hasattr(self, 'auto_shutdown_checkbox'):
+                self.auto_shutdown_checkbox.setChecked(gui_settings.get('auto_shutdown', False))
             # 日志级别过滤和详细模式
             log_filter = gui_settings.get('log_level_filter', 'ALL')
             if hasattr(self, 'log_filter_combo'):
@@ -1816,6 +1820,24 @@ class MainWindow(QMainWindow):
         if reason == QSystemTrayIcon.Trigger:
             self.restore_from_tray()
 
+    def _check_auto_shutdown(self):
+        """在 GUI 线程中检查并发起系统关机。"""
+        if not self.auto_shutdown_checkbox.isChecked():
+            return
+
+        if sys.platform == 'darwin':
+            command = ['osascript', '-e', 'tell application "System Events" to shut down']
+        elif os.name == 'nt':
+            command = ['shutdown', '/s', '/t', '0']
+        else:
+            command = ['shutdown', '-h', 'now']
+
+        self._emit_status(_("status_auto_shutdown"))
+        try:
+            subprocess.Popen(command)
+        except Exception as e:
+            self._emit_status(_("status_auto_shutdown_error", error=e))
+
     def _consume_messages(self):
         """定时器回调：从统一消息队列消费并分发到两个显示框"""
         if not hasattr(self, 'msg_queue'):
@@ -1831,6 +1853,7 @@ class MainWindow(QMainWindow):
                 completion_msg = _("status_all_done")
                 self.output_text_edit.append(completion_msg)
                 self.log_display.appendPlainText(completion_msg)
+                self._check_auto_shutdown()
             elif target == 'status':
                 self.output_text_edit.append(text)
             elif target == 'detail':
@@ -2703,22 +2726,6 @@ class MainWorker(QObject):
         self._terminate_all_children()
         if hasattr(self, '_translation_pool') and self._translation_pool:
             self._translation_pool.stop()
-
-    def _check_auto_shutdown(self):
-        """检查是否需要自动关机"""
-        if hasattr(self.master, 'auto_shutdown_checkbox') and self.master.auto_shutdown_checkbox.isChecked():
-            self.status.emit(_("status_auto_shutdown"))
-            import platform
-            system = platform.system()
-            try:
-                if system == 'Darwin':  # macOS
-                    subprocess.Popen(['osascript', '-e', 'tell application "System Events" to shut down'])
-                elif system == 'Windows':
-                    subprocess.Popen(['shutdown', '/s', '/t', '0'])
-                else:  # Linux
-                    subprocess.Popen(['shutdown', '-h', 'now'])
-            except Exception as e:
-                self.status.emit(_("status_auto_shutdown_error", error=e))
 
     def save_config(self, silent: bool = False):
         self.master.save_config(silent)
