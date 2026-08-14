@@ -244,6 +244,15 @@ TRANSLATOR_SUPPORTED = [
     "sakura（日语本地模型）",
 ] + list(ONLINE_TRANSLATOR_MAPPING.keys())
 
+LOCAL_TRANSLATOR_SUPPORTED = [
+    translator for translator in TRANSLATOR_SUPPORTED
+    if 'sakura' in translator or 'llamacpp' in translator
+]
+ONLINE_TRANSLATOR_SUPPORTED = [
+    translator for translator in TRANSLATOR_SUPPORTED
+    if translator not in LOCAL_TRANSLATOR_SUPPORTED
+]
+
 
 def _compose_output_format(content_type, file_type, enable_translation):
     """Build a valid output format for the actions selected on the input tab."""
@@ -1126,8 +1135,9 @@ class MainWindow(QMainWindow):
         asr_model_file = self.asr_model_file.currentText()
         aligner_file = self.aligner_file.currentText()
         asr_backend = self.asr_backend.currentText()
-        translator = self.translator_group.currentText()
-        language = self.input_lang.currentText()
+        translator = self.selected_translator()
+        translator_mode = self.translator_mode.currentData() or 'online'
+        language = self.transcription_lang.currentData() or 'ja'
         gpt_token = self.gpt_token.text()
         gpt_address = self.gpt_address.text()
         gpt_model = self.gpt_model.text()
@@ -1155,6 +1165,9 @@ class MainWindow(QMainWindow):
             'aligner_file': aligner_file,
             'asr_backend': asr_backend,
             'translator': translator,
+            'translator_mode': translator_mode,
+            'online_translator': self.online_translator_group.currentText(),
+            'local_translator': self.local_translator_group.currentText(),
             'language': language,
             'gpt_address': gpt_address,
             'gpt_model': gpt_model,
@@ -1244,10 +1257,13 @@ class MainWindow(QMainWindow):
             (('settings_asr_model_label', 'asr_model_file'), 'settings_asr_model_tip'),
             (('settings_asr_aligner_label', 'aligner_file'), 'settings_asr_aligner_tip'),
             (('settings_asr_backend_label', 'asr_backend'), 'settings_asr_backend_tip'),
-            (('settings_lang_label', 'input_lang'), 'settings_lang_tip'),
+            (('io_transcription_lang_label', 'transcription_lang'), 'settings_lang_tip'),
             (('settings_asr_param_label', 'param_crispasr'), 'settings_asr_param_placeholder'),
             (('settings_uvr_label', 'uvr_file'), 'settings_uvr_tip'),
-            (('adv_translator_label', 'translator_group'), 'adv_translator_tip'),
+            (('adv_translator_mode_label', 'translator_mode',
+              'adv_online_translator_label', 'online_translator_group',
+              'adv_local_translator_label', 'local_translator_group'),
+             'adv_translator_tip'),
             (('adv_concurrency_label', 'max_concurrent_spin'), 'adv_concurrency_tip'),
             (('adv_online_token_label', 'gpt_token'), 'adv_online_token_placeholder'),
             (('adv_online_model_label', 'gpt_model'), 'adv_online_model_placeholder'),
@@ -1562,9 +1578,60 @@ class MainWindow(QMainWindow):
     def update_processing_controls(self):
         """Keep language controls aligned with the actions selected on the input tab."""
         if hasattr(self, 'transcription_lang'):
-            self.transcription_lang.setEnabled(self.enable_transcription_checkbox.isChecked())
+            language_required = (
+                getattr(self, 'enable_transcription_checkbox', None) is not None
+                and self.enable_transcription_checkbox.isChecked()
+            ) or (
+                getattr(self, 'enable_translation_checkbox', None) is not None
+                and self.enable_translation_checkbox.isChecked()
+            )
+            self.transcription_lang.setEnabled(language_required)
         if hasattr(self, 'target_lang'):
             self.target_lang.setEnabled(self.enable_translation_checkbox.isChecked())
+
+    def selected_translator(self):
+        """Return the translator selected for the active online/local mode."""
+        if self.translator_mode.currentData() == 'local':
+            return self.local_translator_group.currentText()
+        return self.online_translator_group.currentText()
+
+    def set_selected_translator(self, translator, mode=None):
+        """Restore a translator selection while accepting the legacy flat value."""
+        inferred_mode = 'local' if translator in LOCAL_TRANSLATOR_SUPPORTED else 'online'
+        selected_mode = mode if mode in ('online', 'local') else inferred_mode
+        mode_index = self.translator_mode.findData(selected_mode)
+        if mode_index >= 0:
+            self.translator_mode.setCurrentIndex(mode_index)
+
+        target_combo = (
+            self.local_translator_group
+            if selected_mode == 'local'
+            else self.online_translator_group
+        )
+        if translator and target_combo.findText(translator) >= 0:
+            target_combo.setCurrentText(translator)
+
+    def update_translator_mode_controls(self):
+        """Enable only the configuration controls used by the selected mode."""
+        online_mode = self.translator_mode.currentData() != 'local'
+        online_widgets = (
+            self.adv_online_translator_label, self.online_translator_group,
+            self.adv_online_token_label, self.gpt_token,
+            self.adv_online_model_label, self.gpt_model,
+            self.adv_online_address_label, self.gpt_address,
+            self.test_online_button,
+        )
+        local_widgets = (
+            self.adv_local_translator_label, self.local_translator_group,
+            self.adv_offline_model_label, self.sakura_file,
+            self.adv_offline_gpu_label, self.sakura_mode,
+            self.adv_offline_param_label, self.param_llama,
+            self.open_model_dir, self.refresh_language_models_button,
+        )
+        for widget in online_widgets:
+            widget.setEnabled(online_mode)
+        for widget in local_widgets:
+            widget.setEnabled(not online_mode)
 
     def selected_output_format(self):
         """Return the legacy composite output value used by processing code."""
@@ -1769,11 +1836,22 @@ class MainWindow(QMainWindow):
             enable_translation = gui_settings.get(
                 'enable_translation', saved_translator != NO_TRANSLATION
             )
+            saved_online_translator = gui_settings.get('online_translator', '')
+            if self.online_translator_group.findText(saved_online_translator) >= 0:
+                self.online_translator_group.setCurrentText(saved_online_translator)
+            saved_local_translator = gui_settings.get('local_translator', '')
+            if self.local_translator_group.findText(saved_local_translator) >= 0:
+                self.local_translator_group.setCurrentText(saved_local_translator)
             if saved_translator and saved_translator != NO_TRANSLATION:
-                self.translator_group.setCurrentText(saved_translator)
+                self.set_selected_translator(
+                    saved_translator, gui_settings.get('translator_mode')
+                )
             self.enable_transcription_checkbox.setChecked(bool(enable_transcription))
             self.enable_translation_checkbox.setChecked(bool(enable_translation))
-            self.input_lang.setCurrentText(gui_settings.get('language', ''))
+            saved_language = gui_settings.get('language', 'ja')
+            language_index = self.transcription_lang.findData(saved_language)
+            if language_index >= 0:
+                self.transcription_lang.setCurrentIndex(language_index)
             self.gpt_address.setText(gui_settings.get('gpt_address', ''))
             self.gpt_model.setText(gui_settings.get('gpt_model', ''))
             if self.sakura_file:
@@ -2373,12 +2451,6 @@ class MainWindow(QMainWindow):
             self.asr_backend.setCurrentText('qwen3-1.7b')
         self.settings_layout.addWidget(self.asr_backend)
 
-        self.settings_lang_label = BodyLabel(_("settings_lang_label"))
-        self.settings_layout.addWidget(self.settings_lang_label)
-        self.input_lang = QComboBox()
-        self.input_lang.addItems(['ja','en','ko','ru','fr','zh'])
-        self.settings_layout.addWidget(self.input_lang)
-
         self.settings_asr_param_label = BodyLabel(_("settings_asr_param_label"))
         self.settings_layout.addWidget(self.settings_asr_param_label)
         self.param_crispasr = QTextEdit()
@@ -2408,31 +2480,18 @@ class MainWindow(QMainWindow):
 
         self.addSubInterface(self.settings_tab, FluentIcon.SETTING, _("tab_settings"), NavigationItemPosition.TOP)
 
-        # Sync transcription language between IO tab and Settings tab
-        def sync_transcription_to_settings(idx):
-            self.input_lang.blockSignals(True)
-            self.input_lang.setCurrentIndex(idx)
-            self.input_lang.blockSignals(False)
-
-        def sync_settings_to_transcription(idx):
-            self.transcription_lang.blockSignals(True)
-            self.transcription_lang.setCurrentIndex(idx)
-            self.transcription_lang.blockSignals(False)
-
-        self.transcription_lang.currentIndexChanged.connect(sync_transcription_to_settings)
-        self.input_lang.currentIndexChanged.connect(sync_settings_to_transcription)
-
     def initAdvancedSettingTab(self):
         self.advanced_settings_tab = Widget("AdvancedSettings", self)
         self.advanced_settings_layout = self.advanced_settings_tab.vBoxLayout
 
         # Translator Section
         model_row = QHBoxLayout()
-        self.adv_translator_label = BodyLabel(_("adv_translator_label"))
-        model_row.addWidget(self.adv_translator_label)
-        self.translator_group = QComboBox()
-        self.translator_group.addItems(TRANSLATOR_SUPPORTED)
-        model_row.addWidget(self.translator_group)
+        self.adv_translator_mode_label = BodyLabel(_("adv_translator_mode_label"))
+        model_row.addWidget(self.adv_translator_mode_label)
+        self.translator_mode = QComboBox()
+        self.translator_mode.addItem(_("adv_translator_mode_online"), userData='online')
+        self.translator_mode.addItem(_("adv_translator_mode_local"), userData='local')
+        model_row.addWidget(self.translator_mode)
         model_row.addSpacing(20)
         self.adv_concurrency_label = BodyLabel(_("adv_concurrency_label"))
         model_row.addWidget(self.adv_concurrency_label)
@@ -2442,6 +2501,20 @@ class MainWindow(QMainWindow):
         model_row.addWidget(self.max_concurrent_spin)
         model_row.addStretch()
         self.advanced_settings_layout.addLayout(model_row)
+
+        translator_row = QHBoxLayout()
+        self.adv_online_translator_label = BodyLabel(_("adv_online_translator_label"))
+        translator_row.addWidget(self.adv_online_translator_label)
+        self.online_translator_group = QComboBox()
+        self.online_translator_group.addItems(ONLINE_TRANSLATOR_SUPPORTED)
+        translator_row.addWidget(self.online_translator_group, 1)
+        translator_row.addSpacing(20)
+        self.adv_local_translator_label = BodyLabel(_("adv_local_translator_label"))
+        translator_row.addWidget(self.adv_local_translator_label)
+        self.local_translator_group = QComboBox()
+        self.local_translator_group.addItems(LOCAL_TRANSLATOR_SUPPORTED)
+        translator_row.addWidget(self.local_translator_group, 1)
+        self.advanced_settings_layout.addLayout(translator_row)
 
         self.adv_online_token_label = BodyLabel(_("adv_online_token_label"))
         self.advanced_settings_layout.addWidget(self.adv_online_token_label)
@@ -2494,6 +2567,11 @@ class MainWindow(QMainWindow):
         self.test_online_button.clicked.connect(self.run_test_online_api)
         button_layout.addWidget(self.test_online_button)
         self.advanced_settings_layout.addLayout(button_layout)
+
+        self.translator_mode.currentIndexChanged.connect(
+            self.update_translator_mode_controls
+        )
+        self.update_translator_mode_controls()
 
         self.addSubInterface(self.advanced_settings_tab, FluentIcon.SETTING, _("tab_advanced_settings"), NavigationItemPosition.TOP)
 
@@ -2855,8 +2933,7 @@ class MainWorker(QObject):
     @error_handler
     def update_translation_config(self):
         self._emit_status(_("status_config_translating"))
-        translator = self.master.translator_group.currentText()
-        language = self.master.input_lang.currentText()
+        translator = self.master.selected_translator()
         gpt_token = self.master.gpt_token.text() or _load_api_key()
         gpt_address = self.master.gpt_address.text()
         gpt_model = self.master.gpt_model.text()
@@ -2885,7 +2962,7 @@ class MainWorker(QObject):
         if 'common' not in cfg:
             cfg['common'] = {}
         target_lang = self.master.target_lang.currentData() if hasattr(self.master, 'target_lang') else 'zh-cn'
-        source_lang = self.master.input_lang.currentText() if hasattr(self.master, 'input_lang') else 'ja'
+        source_lang = self.master.transcription_lang.currentData() or 'ja'
         if source_lang == 'zh':
             source_lang = 'zh-cn'
         cfg['common']['language'] = f"{source_lang}2{target_lang}"
@@ -2978,7 +3055,7 @@ class MainWorker(QObject):
         self._stop_requested = False
         self._stop_event.clear()
         self.save_config()
-        translator = self.master.translator_group.currentText()
+        translator = self.master.selected_translator()
         gpt_token = self.master.gpt_token.text() or _load_api_key()
         gpt_address = self.master.gpt_address.text()
         gpt_model = self.master.gpt_model.text()
@@ -3431,8 +3508,8 @@ class MainWorker(QObject):
         asr_model_file = self.master.asr_model_file.currentText()
         aligner_file = self.master.aligner_file.currentText()
         asr_backend = self.master.asr_backend.currentText()
-        translator = self.master.translator_group.currentText()
-        language = self.master.input_lang.currentText()
+        translator = self.master.selected_translator()
+        language = self.master.transcription_lang.currentData() or 'ja'
         sakura_file = self.master.sakura_file.currentText()
         sakura_mode = self.master.sakura_mode.text()
         proxy_address = self.master.proxy_address.text()
