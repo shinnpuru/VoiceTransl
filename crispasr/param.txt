@@ -1,1 +1,1 @@
-$crispasr_executable --backend $backend --model $model_file --aligner-model $aligner_file --force-aligner  --language $language --output-srt --output-file $output_file --file $input_file
+$crispasr_executable --backend $backend --model $model_file --aligner-model $aligner_file --force-aligner  --language $language --output-srt --output-file $output_file --file $input_file --vad  --vad-max-speech-duration-s 12 --vad-min-silence-duration-ms 200 --max-new-tokens 96 --frequency-penalty 0.8
