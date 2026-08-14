@@ -320,8 +320,8 @@ TRANSLATIONS = {
 
         # === Language Change Notification ===
         "notify_lang_changed_title": "界面语言已更改",
-        "notify_lang_changed_msg": "重启程序后生效",
-        "status_lang_changed": "[INFO] 界面语言已更改为{lang}，重启程序后生效。",
+        "notify_lang_changed_msg": "界面语言已立即生效",
+        "status_lang_changed": "[INFO] 界面语言已切换为{lang}。",
 
         # === Log Tab (Additional) ===
         "log_filter_label": "🔍 日志级别",
@@ -652,8 +652,8 @@ TRANSLATIONS = {
 
         # === Language Change Notification ===
         "notify_lang_changed_title": "UI Language Changed",
-        "notify_lang_changed_msg": "Restart to take effect",
-        "status_lang_changed": "[INFO] UI language changed to {lang}. Restart to take effect.",
+        "notify_lang_changed_msg": "The new UI language is active now",
+        "status_lang_changed": "[INFO] UI language switched to {lang}.",
 
         # === Log Tab (Additional) ===
         "log_filter_label": "🔍 Log Level",
@@ -983,8 +983,8 @@ TRANSLATIONS = {
 
         # === Language Change Notification ===
         "notify_lang_changed_title": "UI言語が変更されました",
-        "notify_lang_changed_msg": "再起動後に反映されます",
-        "status_lang_changed": "[INFO] UI言語が{lang}に変更されました。再起動後に反映されます。",
+        "notify_lang_changed_msg": "UI言語がすぐに反映されました",
+        "status_lang_changed": "[INFO] UI言語を{lang}に切り替えました。",
 
         # === Log Tab (Additional) ===
         "log_filter_label": "🔍 ログレベル",

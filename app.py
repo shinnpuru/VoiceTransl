@@ -1081,6 +1081,8 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self._suppress_auto_save = True
+        self._button_mirrors = []
+        self._dynamic_i18n_labels = []
         self._auto_save_timer = QTimer(self)
         self._auto_save_timer.setSingleShot(True)
         self._auto_save_timer.setInterval(200)
@@ -1315,11 +1317,12 @@ class MainWindow(QMainWindow):
         if index is not None and hasattr(self, 'main_tab_bar'):
             self._select_main_tab(index)
 
-    @staticmethod
-    def _mirror_button(source_button, parent=None):
+    def _mirror_button(self, source_button, parent=None):
         """Create a right-column action that preserves the original signal."""
         button = QPushButton(source_button.text(), parent)
+        button.setEnabled(source_button.isEnabled())
         button.clicked.connect(source_button.click)
+        self._button_mirrors.append((source_button, button))
         source_button.hide()
         return button
 
@@ -1371,7 +1374,9 @@ class MainWindow(QMainWindow):
             config_layout.setContentsMargins(12, 12, 12, 12)
             config_layout.setSpacing(8)
             if title:
-                config_layout.addWidget(SubtitleLabel(title))
+                title_label = SubtitleLabel(_(title))
+                self._dynamic_i18n_labels.append((title_label, title))
+                config_layout.addWidget(title_label)
             config_layout.addWidget(config_widget)
 
             action_frame = SimpleCardWidget(section_row)
@@ -1384,12 +1389,16 @@ class MainWindow(QMainWindow):
             action_layout = QVBoxLayout(action_frame)
             action_layout.setContentsMargins(12, 12, 12, 12)
             action_layout.setSpacing(8)
-            action_layout.addWidget(SubtitleLabel(_('tab_actions_title')))
+            action_title = SubtitleLabel(_('tab_actions_title'))
+            self._dynamic_i18n_labels.append((action_title, 'tab_actions_title'))
+            action_layout.addWidget(action_title)
             for item in action_widgets:
                 if item is None:
                     action_layout.addSpacing(10)
                 elif isinstance(item, str):
-                    action_layout.addWidget(BodyLabel(item))
+                    item_label = BodyLabel(_(item))
+                    self._dynamic_i18n_labels.append((item_label, item))
+                    action_layout.addWidget(item_label)
                 elif isinstance(item, QPushButton):
                     action_layout.addWidget(self._mirror_button(item, action_frame))
                 elif isinstance(item, QWidget):
@@ -1440,7 +1449,7 @@ class MainWindow(QMainWindow):
         welcome_page = self._make_split_tab(
             self.about_tab,
             [self.language_action_widget, None, self.btn_wiki,
-             None, self.start_button, None, _('about_sponsor_title'),
+             None, self.start_button, None, 'about_sponsor_title',
              self.btn_afdian, self.btn_bilibili, self.btn_kofi,],
             scrollable=False,
         )
@@ -1455,39 +1464,39 @@ class MainWindow(QMainWindow):
         self.advanced_settings_tab.setFrameShape(QFrame.StyledPanel)
         models_page = self._make_sectioned_tab(
             [
-                (_('models_asr_actions'), self.settings_tab,
+                ('models_asr_actions', self.settings_tab,
                  [self.open_crispasr_dir, self.refresh_speech_models_button]),
-                (_('models_translation_actions'), self.advanced_settings_tab,
+                ('models_translation_actions', self.advanced_settings_tab,
                  [self.open_model_dir, self.refresh_language_models_button,
                   self.test_online_button]),
             ]
         )
 
-        save_dict_button = QPushButton(_('dict_save_btn'))
-        save_dict_button.clicked.connect(lambda: self.save_config(silent=False))
-        open_dict_dir_button = QPushButton(_('dict_open_dir_btn'))
-        open_dict_dir_button.clicked.connect(
+        self.save_dict_button = QPushButton(_('dict_save_btn'))
+        self.save_dict_button.clicked.connect(lambda: self.save_config(silent=False))
+        self.open_dict_dir_button = QPushButton(_('dict_open_dir_btn'))
+        self.open_dict_dir_button.clicked.connect(
             lambda: open_path(os.path.join(os.getcwd(), 'project'))
         )
         dict_page = self._make_split_tab(
-            self.dict_tab, [save_dict_button, open_dict_dir_button]
+            self.dict_tab, [self.save_dict_button, self.open_dict_dir_button]
         )
 
         # Tool configurations and their actions are paired section by section.
         # The vocal-separation model is part of the vocal section itself.
         tools_page = self._make_sectioned_tab(
             [
-                (_('clip_tool_label'), self.clip_trim_config,
+                ('clip_tool_label', self.clip_trim_config,
                  [self.run_clip_button]),
-                (_('clip_vocal_split_label'), self.clip_vocal_config,
+                ('clip_vocal_split_label', self.clip_vocal_config,
                  [self.run_uvr_button, self.open_uvr_dir,
                   self.refresh_uvr_models_button]),
-                (_('synth_label'), self.synth_video_config,
+                ('synth_label', self.synth_video_config,
                  [self.synth_video_browse_btn, self.synth_srt_browse_btn,
                   self.run_synth_button]),
-                (_('synth_audio_label'), self.synth_audio_config,
+                ('synth_audio_label', self.synth_audio_config,
                  [self.run_synth_audio_button]),
-                (_('tab_summarize'), self.summarize_tab,
+                ('tab_summarize', self.summarize_tab,
                  [self.run_summarize_button]),
             ]
         )
@@ -1500,17 +1509,18 @@ class MainWindow(QMainWindow):
         log_page = self._make_split_tab(self.log_tab, [self.open_log_button])
 
         pages = [
-            (welcome_page, _('tab_welcome')),
-            (workbench_page, _('tab_workbench')),
-            (models_page, _('tab_models')),
-            (dict_page, _('tab_dict')),
-            (tools_page, _('tab_tools')),
-            (log_page, _('tab_log')),
+            (welcome_page, 'tab_welcome'),
+            (workbench_page, 'tab_workbench'),
+            (models_page, 'tab_models'),
+            (dict_page, 'tab_dict'),
+            (tools_page, 'tab_tools'),
+            (log_page, 'tab_log'),
         ]
-        for index, (page, title) in enumerate(pages):
+        self._main_tab_i18n_keys = [key for _page, key in pages]
+        for index, (page, title_key) in enumerate(pages):
             route_key = f'main-tab-{index}'
             self.main_tab_bar.addTab(
-                route_key, title,
+                route_key, _(title_key),
                 onClick=lambda checked=False, i=index: self._select_main_tab(i),
             )
             self.main_stack.addWidget(page)
@@ -1533,7 +1543,8 @@ class MainWindow(QMainWindow):
         realtime_layout = QVBoxLayout(realtime_frame)
         realtime_layout.setContentsMargins(12, 8, 12, 10)
         realtime_layout.setSpacing(5)
-        realtime_layout.addWidget(SubtitleLabel(_('realtime_output_title')))
+        self.realtime_output_label = SubtitleLabel(_('realtime_output_title'))
+        realtime_layout.addWidget(self.realtime_output_label)
         self.output_text_edit.show()
         self.output_text_edit.setMinimumHeight(110)
         self.output_text_edit.setMaximumHeight(170)
@@ -1632,6 +1643,9 @@ class MainWindow(QMainWindow):
             widget.setEnabled(online_mode)
         for widget in local_widgets:
             widget.setEnabled(not online_mode)
+        for source_button, mirror_button in self._button_mirrors:
+            if source_button in online_widgets or source_button in local_widgets:
+                mirror_button.setEnabled(source_button.isEnabled())
 
     def selected_output_format(self):
         """Return the legacy composite output value used by processing code."""
@@ -1974,14 +1988,14 @@ class MainWindow(QMainWindow):
         self.tray_icon.setToolTip(_("tray_tooltip"))
 
         tray_menu = QMenu(self)
-        action_restore = QAction(_("tray_show"), self)
-        action_quit = QAction(_("tray_quit"), self)
-        action_restore.triggered.connect(self.restore_from_tray)
-        action_quit.triggered.connect(QApplication.instance().quit)
+        self.tray_restore_action = QAction(_("tray_show"), self)
+        self.tray_quit_action = QAction(_("tray_quit"), self)
+        self.tray_restore_action.triggered.connect(self.restore_from_tray)
+        self.tray_quit_action.triggered.connect(QApplication.instance().quit)
 
-        tray_menu.addAction(action_restore)
+        tray_menu.addAction(self.tray_restore_action)
         tray_menu.addSeparator()
-        tray_menu.addAction(action_quit)
+        tray_menu.addAction(self.tray_quit_action)
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self.on_tray_activated)
         self.tray_icon.show()
@@ -2125,7 +2139,7 @@ class MainWindow(QMainWindow):
 
         # 日志过滤工具栏
         filter_layout = QHBoxLayout()
-        filter_label = QLabel(_("log_filter_label"))
+        self.log_filter_label = QLabel(_("log_filter_label"))
         self.log_filter_combo = QComboBox()
         self.log_filter_combo.addItems(["ALL", "INFO+", "WARNING+", "ERROR+"])
         self.log_filter_combo.currentTextChanged.connect(self._on_log_filter_changed)
@@ -2135,7 +2149,7 @@ class MainWindow(QMainWindow):
         self.verbose_checkbox.setToolTip(_("log_verbose_tooltip"))
         self.verbose_checkbox.stateChanged.connect(self._on_verbose_changed)
 
-        filter_layout.addWidget(filter_label)
+        filter_layout.addWidget(self.log_filter_label)
         filter_layout.addWidget(self.log_filter_combo)
         filter_layout.addStretch()
         filter_layout.addWidget(self.verbose_checkbox)
@@ -2177,9 +2191,9 @@ class MainWindow(QMainWindow):
         self.lang_selector_label = BodyLabel(_("lang_selector_label"))
         language_layout.addWidget(self.lang_selector_label)
         self.lang_selector = QComboBox()
-        self.lang_selector.addItem(_("lang_zh"))
-        self.lang_selector.addItem(_("lang_en"))
-        self.lang_selector.addItem(_("lang_ja"))
+        self.lang_selector.addItem(_("lang_zh"), userData='zh')
+        self.lang_selector.addItem(_("lang_en"), userData='en')
+        self.lang_selector.addItem(_("lang_ja"), userData='ja')
         lang_map = {"zh": 0, "en": 1, "ja": 2}
         self.lang_selector.setCurrentIndex(lang_map.get(get_language(), 0))
         self.lang_selector.currentIndexChanged.connect(self._on_language_changed)
@@ -2221,17 +2235,188 @@ class MainWindow(QMainWindow):
 
         self.addSubInterface(self.about_tab, FluentIcon.HEART, _("tab_about"), NavigationItemPosition.TOP)
 
+    @staticmethod
+    def _retranslate_combo(combo, translation_keys):
+        """Update translated combo-box labels without changing its selection."""
+        combo.blockSignals(True)
+        try:
+            for index in range(combo.count()):
+                key = translation_keys.get(combo.itemData(index))
+                if key:
+                    combo.setItemText(index, _(key))
+        finally:
+            combo.blockSignals(False)
+
+    def _retranslate_ui(self):
+        """Refresh every persistent UI string after changing the language."""
+        text_bindings = {
+            'log_realtime_label': 'log_realtime_label',
+            'log_file_label': 'log_file_label',
+            'log_filter_label': 'log_filter_label',
+            'verbose_checkbox': 'log_verbose_checkbox',
+            'open_log_button': 'log_open_btn',
+            'about_title_label': 'about_title',
+            'lang_selector_label': 'lang_selector_label',
+            'start_button': 'about_start_btn',
+            'btn_wiki': 'about_wiki_btn',
+            'btn_afdian': 'about_afdian_btn',
+            'btn_bilibili': 'about_bilibili_btn',
+            'btn_kofi': 'about_kofi_btn',
+            'io_input_label': 'io_input_label',
+            'io_transcription_group_label': 'io_transcription_group_title',
+            'enable_transcription_checkbox': 'io_enable_transcription_checkbox',
+            'io_transcription_lang_label': 'io_transcription_lang_label',
+            'enable_segment_checkbox': 'io_segment_checkbox',
+            'io_segment_duration_label': 'io_segment_duration_label',
+            'io_translation_group_label': 'io_translation_group_title',
+            'enable_translation_checkbox': 'io_enable_translation_checkbox',
+            'io_target_lang_label': 'io_target_lang_label',
+            'io_proxy_label': 'io_proxy_label',
+            'io_output_group_label': 'io_output_group_title',
+            'io_output_dir_label': 'io_output_dir_label',
+            'output_dir_button': 'io_browse_dir_btn',
+            'use_input_dir_checkbox': 'io_use_input_dir_checkbox',
+            'auto_shutdown_checkbox': 'io_auto_shutdown_checkbox',
+            'io_output_target_label': 'io_output_target_label',
+            'io_output_type_label': 'io_output_type_label',
+            'run_button': 'io_run_btn',
+            'cancel_button': 'io_cancel_btn',
+            'open_output_button': 'io_open_output_btn',
+            'clean_button': 'io_clean_btn',
+            'dict_before_label': 'dict_before_label',
+            'dict_gpt_label': 'dict_gpt_label',
+            'dict_after_label': 'dict_after_label',
+            'dict_extra_label': 'dict_extra_label',
+            'dict_prompt_mode_label': 'dict_prompt_mode_label',
+            'save_dict_button': 'dict_save_btn',
+            'open_dict_dir_button': 'dict_open_dir_btn',
+            'settings_asr_model_label': 'settings_asr_model_label',
+            'settings_asr_aligner_label': 'settings_asr_aligner_label',
+            'settings_asr_backend_label': 'settings_asr_backend_label',
+            'settings_asr_param_label': 'settings_asr_param_label',
+            'open_crispasr_dir': 'settings_open_crispasr_btn',
+            'refresh_speech_models_button': 'settings_refresh_speech_btn',
+            'settings_uvr_label': 'settings_uvr_label',
+            'open_uvr_dir': 'settings_open_uvr_btn',
+            'refresh_uvr_models_button': 'settings_refresh_uvr_btn',
+            'adv_translator_mode_label': 'adv_translator_mode_label',
+            'adv_concurrency_label': 'adv_concurrency_label',
+            'adv_online_translator_label': 'adv_online_translator_label',
+            'adv_local_translator_label': 'adv_local_translator_label',
+            'adv_online_token_label': 'adv_online_token_label',
+            'adv_online_model_label': 'adv_online_model_label',
+            'adv_online_address_label': 'adv_online_address_label',
+            'adv_offline_model_label': 'adv_offline_model_label',
+            'adv_offline_gpu_label': 'adv_offline_gpu_label',
+            'adv_offline_param_label': 'adv_offline_param_label',
+            'open_model_dir': 'adv_open_model_btn',
+            'refresh_language_models_button': 'adv_refresh_model_btn',
+            'test_online_button': 'adv_test_api_btn',
+            'clip_start_label': 'clip_start_label',
+            'clip_end_label': 'clip_end_label',
+            'run_clip_button': 'clip_run_btn',
+            'run_uvr_button': 'clip_vocal_run_btn',
+            'synth_video_label': 'synth_video_label',
+            'synth_video_browse_btn': 'synth_browse_video_btn',
+            'synth_srt_label': 'synth_srt_label',
+            'synth_srt_browse_btn': 'synth_browse_srt_btn',
+            'synth_subtitle_type_label': 'synth_subtitle_type_label',
+            'synth_font_label': 'synth_font_label',
+            'run_synth_button': 'synth_run_btn',
+            'run_synth_audio_button': 'synth_audio_run_btn',
+            'summarize_prompt_label': 'summarize_prompt_label',
+            'summarize_input_label': 'summarize_input_label',
+            'run_summarize_button': 'summarize_run_btn',
+            'realtime_output_label': 'realtime_output_title',
+        }
+        for attribute_name, translation_key in text_bindings.items():
+            widget = getattr(self, attribute_name, None)
+            if widget is not None:
+                widget.setText(_(translation_key))
+
+        placeholder_bindings = {
+            'output_text_edit': 'log_realtime_placeholder',
+            'input_files_list': 'io_input_placeholder',
+            'proxy_address': 'io_proxy_placeholder',
+            'before_dict': 'dict_before_placeholder',
+            'gpt_dict': 'dict_gpt_placeholder',
+            'after_dict': 'dict_after_placeholder',
+            'extra_prompt': 'dict_extra_placeholder',
+            'param_crispasr': 'settings_asr_param_placeholder',
+            'gpt_token': 'adv_online_token_placeholder',
+            'gpt_model': 'adv_online_model_placeholder',
+            'gpt_address': 'adv_online_address_placeholder',
+            'param_llama': 'adv_offline_param_placeholder',
+            'clip_files_list': 'clip_placeholder',
+            'clip_start_time': 'clip_start_placeholder',
+            'clip_end_time': 'clip_end_placeholder',
+            'uvr_file_list': 'clip_vocal_placeholder',
+            'synth_video_files_list': 'synth_video_placeholder',
+            'synth_srt_files_list': 'synth_srt_placeholder',
+            'synth_audio_files_list': 'synth_audio_placeholder',
+            'summarize_prompt': 'summarize_prompt_placeholder',
+            'summarize_files_list': 'summarize_input_placeholder',
+        }
+        for attribute_name, translation_key in placeholder_bindings.items():
+            widget = getattr(self, attribute_name, None)
+            if widget is not None:
+                widget.setPlaceholderText(_(translation_key))
+
+        self._retranslate_combo(self.lang_selector, {
+            'zh': 'lang_zh', 'en': 'lang_en', 'ja': 'lang_ja',
+        })
+        language_keys = {
+            code: f"target_lang_{code.replace('-', '_')}"
+            for code in ('zh-cn', 'zh-tw', 'en', 'ja', 'ko', 'ru', 'fr', 'zh')
+        }
+        self._retranslate_combo(self.transcription_lang, language_keys)
+        self._retranslate_combo(self.target_lang, language_keys)
+        self._retranslate_combo(self.output_target_combo, {
+            '原文': 'output_target_original',
+            '目标': 'output_target_translated',
+            '双语': 'output_target_bilingual',
+        })
+        self._retranslate_combo(self.output_type_combo, {
+            'SRT': 'output_type_srt', 'LRC': 'output_type_lrc',
+        })
+        self._retranslate_combo(self.change_prompt_mode, {
+            '不修改': 'dict_prompt_mode_no',
+            '追加': 'dict_prompt_mode_append',
+            '覆盖': 'dict_prompt_mode_overwrite',
+        })
+        self._retranslate_combo(self.translator_mode, {
+            'online': 'adv_translator_mode_online',
+            'local': 'adv_translator_mode_local',
+        })
+        self._retranslate_combo(self.subtitle_type_combo, {
+            '硬字幕': 'synth_sub_hard', '软字幕': 'synth_sub_soft',
+        })
+
+        for widget, translation_key in self._dynamic_i18n_labels:
+            widget.setText(_(translation_key))
+        for index, translation_key in enumerate(self._main_tab_i18n_keys):
+            self.main_tab_bar.setTabText(index, _(translation_key))
+        for source_button, mirror_button in self._button_mirrors:
+            mirror_button.setText(source_button.text())
+
+        self.setWindowTitle(_("window_title"))
+        self.about_avatar.setToolTip(_("about_title"))
+        self.verbose_checkbox.setToolTip(_("log_verbose_tooltip"))
+        if getattr(self, 'tray_icon', None):
+            self.tray_icon.setToolTip(_("tray_tooltip"))
+            self.tray_restore_action.setText(_("tray_show"))
+            self.tray_quit_action.setText(_("tray_quit"))
+        self._apply_config_tooltips()
+
     def _on_language_changed(self, index: int):
-        """界面语言变更：保存设置并提示重启后生效"""
+        """Apply a UI language change immediately without rebuilding the window."""
         if self._suppress_auto_save:
             return
-        lang_map = {0: "zh", 1: "en", 2: "ja"}
-        lang_code = lang_map.get(index, "zh")
+        lang_code = self.lang_selector.itemData(index) or "zh"
         set_language(lang_code)
-        # 触发防抖自动保存（save_config 会写入 ui_language）
+        self._retranslate_ui()
         self._schedule_auto_save()
-        # 通知用户：状态栏消息 + 托盘气泡
-        lang_name = self.lang_selector.currentText() if hasattr(self, 'lang_selector') else lang_code
+        lang_name = self.lang_selector.currentText()
         self._emit_status(_("status_lang_changed", lang=lang_name))
         if getattr(self, 'tray_icon', None):
             self.tray_icon.showMessage(
@@ -2255,7 +2440,8 @@ class MainWindow(QMainWindow):
         self.input_output_layout.addWidget(self.input_files_list)
 
         # Transcription settings stay together.
-        self.input_output_layout.addWidget(SubtitleLabel(_("io_transcription_group_title")))
+        self.io_transcription_group_label = SubtitleLabel(_("io_transcription_group_title"))
+        self.input_output_layout.addWidget(self.io_transcription_group_label)
         transcription_layout = QHBoxLayout()
         self.enable_transcription_checkbox = QCheckBox(_("io_enable_transcription_checkbox"))
         self.enable_transcription_checkbox.setChecked(True)
@@ -2288,7 +2474,8 @@ class MainWindow(QMainWindow):
         self.input_output_layout.addLayout(segment_layout)
 
         # Translation settings stay together.
-        self.input_output_layout.addWidget(SubtitleLabel(_("io_translation_group_title")))
+        self.io_translation_group_label = SubtitleLabel(_("io_translation_group_title"))
+        self.input_output_layout.addWidget(self.io_translation_group_label)
         translation_layout = QHBoxLayout()
         self.enable_translation_checkbox = QCheckBox(_("io_enable_translation_checkbox"))
         self.enable_translation_checkbox.setChecked(False)
@@ -2314,7 +2501,8 @@ class MainWindow(QMainWindow):
         self.input_output_layout.addWidget(self.proxy_address)
 
         # Output Directory Section
-        self.input_output_layout.addWidget(SubtitleLabel(_("io_output_group_title")))
+        self.io_output_group_label = SubtitleLabel(_("io_output_group_title"))
+        self.input_output_layout.addWidget(self.io_output_group_label)
         self.io_output_dir_label = BodyLabel(_("io_output_dir_label"))
         self.input_output_layout.addWidget(self.io_output_dir_label)
         output_dir_layout = QHBoxLayout()
