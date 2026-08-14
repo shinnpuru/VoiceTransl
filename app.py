@@ -1015,6 +1015,31 @@ class Widget(QFrame):
         # Must set a globally unique object name for the sub-interface
         self.setObjectName(text.replace(' ', '-'))
 
+
+class AspectRatioPixmapLabel(QLabel):
+    """Display an image responsively without stretching its aspect ratio."""
+
+    def __init__(self, image_path: str, parent=None):
+        super().__init__(parent)
+        self._source_pixmap = QtGui.QPixmap(image_path)
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumHeight(320)
+        self._update_pixmap()
+
+    def _update_pixmap(self):
+        if self._source_pixmap.isNull():
+            return
+        QLabel.setPixmap(
+            self,
+            self._source_pixmap.scaled(
+                self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ),
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_pixmap()
+
 # .env API Key 读写辅助函数
 def _load_api_key() -> str:
     """从项目根目录 .env 文件中读取 API Key"""
@@ -1110,7 +1135,7 @@ class MainWindow(QMainWindow):
         sakura_mode = self.sakura_mode.text()
         proxy_address = self.proxy_address.text()
         uvr_file = self.uvr_file.currentText()
-        output_format = self.output_format.currentData()
+        output_format = self.selected_output_format()
         subtitle_font = self.subtitle_font_combo.currentText()
         output_dir = self.output_dir_edit.text().strip() or self.default_output_dir()
         use_input_dir = self.use_input_dir_checkbox.isChecked()
@@ -1138,6 +1163,8 @@ class MainWindow(QMainWindow):
             'proxy_address': proxy_address,
             'uvr_file': uvr_file,
             'output_format': output_format,
+            'output_target': self.output_target_combo.currentData(),
+            'output_type': self.output_type_combo.currentData(),
             'subtitle_font': subtitle_font,
             'output_dir': output_dir,
             'use_input_dir': use_input_dir,
@@ -1200,18 +1227,60 @@ class MainWindow(QMainWindow):
             elif isinstance(widget, QTextEdit):
                 widget.installEventFilter(self)
 
+    def _apply_config_tooltips(self):
+        """Keep visible labels compact and move longer guidance to tooltips."""
+        tooltip_groups = (
+            (('io_input_label', 'input_files_list'), 'io_input_tip'),
+            (('io_proxy_label', 'proxy_address'), 'io_proxy_placeholder'),
+            (('io_output_dir_label', 'output_dir_edit'), 'io_output_dir_tip'),
+            (('use_input_dir_checkbox',), 'io_use_input_dir_tip'),
+            (('io_output_target_label', 'output_target_combo'), 'io_output_target_tip'),
+            (('io_output_type_label', 'output_type_combo'), 'io_output_type_tip'),
+            (('enable_segment_checkbox',), 'io_segment_tip'),
+            (('dict_before_label', 'before_dict'), 'dict_before_tip'),
+            (('dict_gpt_label', 'gpt_dict'), 'dict_gpt_tip'),
+            (('dict_after_label', 'after_dict'), 'dict_after_tip'),
+            (('dict_extra_label', 'extra_prompt'), 'dict_extra_tip'),
+            (('settings_asr_model_label', 'asr_model_file'), 'settings_asr_model_tip'),
+            (('settings_asr_aligner_label', 'aligner_file'), 'settings_asr_aligner_tip'),
+            (('settings_asr_backend_label', 'asr_backend'), 'settings_asr_backend_tip'),
+            (('settings_lang_label', 'input_lang'), 'settings_lang_tip'),
+            (('settings_asr_param_label', 'param_crispasr'), 'settings_asr_param_placeholder'),
+            (('settings_uvr_label', 'uvr_file'), 'settings_uvr_tip'),
+            (('adv_translator_label', 'translator_group'), 'adv_translator_tip'),
+            (('adv_concurrency_label', 'max_concurrent_spin'), 'adv_concurrency_tip'),
+            (('adv_online_token_label', 'gpt_token'), 'adv_online_token_placeholder'),
+            (('adv_online_model_label', 'gpt_model'), 'adv_online_model_placeholder'),
+            (('adv_online_address_label', 'gpt_address'), 'adv_online_address_tip'),
+            (('adv_offline_param_label', 'param_llama'), 'adv_offline_param_placeholder'),
+            (('clip_files_list',), 'clip_placeholder'),
+            (('uvr_file_list',), 'clip_vocal_placeholder'),
+            (('synth_video_files_list',), 'synth_video_placeholder'),
+            (('synth_srt_files_list',), 'synth_srt_placeholder'),
+            (('synth_audio_files_list',), 'synth_audio_placeholder'),
+            (('summarize_prompt',), 'summarize_prompt_placeholder'),
+            (('summarize_files_list',), 'summarize_input_placeholder'),
+        )
+        for attribute_names, translation_key in tooltip_groups:
+            tooltip = _(translation_key)
+            for attribute_name in attribute_names:
+                widget = getattr(self, attribute_name, None)
+                if widget is not None:
+                    widget.setToolTip(tooltip)
+
     def initUI(self):
         os.makedirs('separate', exist_ok=True)
         self._legacy_interfaces = []
         self.initAboutTab()
         self.initInputOutputTab()
+        self.initSettingsTab()
+        self.initAdvancedSettingTab()
         self.initClipTab()
         self.initSynthTab()
         self.initSummarizeTab()
-        self.initSettingsTab()
-        self.initAdvancedSettingTab()
         self.initDictTab()
         self.initLogTab()
+        self._apply_config_tooltips()
         self._assemble_six_tab_layout()
         self._install_auto_save_signals()
         self.load_config()
@@ -1239,7 +1308,7 @@ class MainWindow(QMainWindow):
         return button
 
     def _make_scroll_area(self, content_widget):
-        """Wrap configuration content in a Fluent scroll area."""
+        """Wrap a complete tab body in a Fluent scroll area."""
         scroll = ScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1251,41 +1320,74 @@ class MainWindow(QMainWindow):
         return scroll
 
     def _make_split_tab(self, config_widget, action_widgets, scrollable=True):
-        """Build the shared left-configuration/right-actions tab skeleton."""
-        page = QWidget(self)
-        page.setObjectName('mainTabPage')
-        page_layout = QHBoxLayout(page)
-        page_layout.setContentsMargins(10, 10, 10, 10)
-        page_layout.setSpacing(10)
-
-        config_frame = SimpleCardWidget(page)
-        config_frame.setObjectName('tabConfigPanel')
-        config_layout = QVBoxLayout(config_frame)
-        config_layout.setContentsMargins(12, 12, 12, 12)
-        config_layout.addWidget(
-            self._make_scroll_area(config_widget) if scrollable else config_widget
+        """Build a tab containing one paired configuration/action section."""
+        return self._make_sectioned_tab(
+            [(None, config_widget, action_widgets)], scrollable=scrollable
         )
 
-        action_frame = SimpleCardWidget(page)
-        action_frame.setObjectName('tabActionPanel')
-        action_frame.setMinimumWidth(190)
-        action_frame.setMaximumWidth(240)
-        action_layout = QVBoxLayout(action_frame)
-        action_layout.setContentsMargins(12, 12, 12, 12)
-        action_layout.setSpacing(8)
-        action_title = SubtitleLabel(_('tab_actions_title'))
-        action_layout.addWidget(action_title)
-        for item in action_widgets:
-            if item is None:
-                action_layout.addSpacing(10)
-            elif isinstance(item, str):
-                action_layout.addWidget(BodyLabel(item))
-            else:
-                action_layout.addWidget(self._mirror_button(item, action_frame))
-        action_layout.addStretch(1)
+    def _make_sectioned_tab(self, sections, scrollable=True):
+        """Build vertically stacked, one-to-one configuration/action sections.
 
-        page_layout.addWidget(config_frame, 1)
-        page_layout.addWidget(action_frame)
+        Each section owns one left configuration card and the actions that apply
+        to it on the right.  The scroll area wraps both columns so their vertical
+        relationship is preserved while scrolling.
+        """
+        page = QWidget(self)
+        page.setObjectName('mainTabPage')
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        tab_body = QWidget(page)
+        tab_body.setObjectName('mainTabScrollBody')
+        body_layout = QVBoxLayout(tab_body)
+        body_layout.setContentsMargins(10, 10, 10, 10)
+        body_layout.setSpacing(10)
+
+        for title, config_widget, action_widgets in sections:
+            section_row = QWidget(tab_body)
+            section_layout = QHBoxLayout(section_row)
+            section_layout.setContentsMargins(0, 0, 0, 0)
+            section_layout.setSpacing(10)
+
+            config_frame = SimpleCardWidget(section_row)
+            config_frame.setObjectName('tabConfigPanel')
+            config_layout = QVBoxLayout(config_frame)
+            config_layout.setContentsMargins(12, 12, 12, 12)
+            config_layout.setSpacing(8)
+            if title:
+                config_layout.addWidget(SubtitleLabel(title))
+            config_layout.addWidget(config_widget)
+
+            action_frame = SimpleCardWidget(section_row)
+            action_frame.setObjectName('tabActionPanel')
+            # Every section row owns an independent horizontal layout, so a
+            # width range lets labels/buttons produce slightly different right
+            # column widths.  A shared fixed width keeps stacked action panels
+            # on the same left and right edges.
+            action_frame.setFixedWidth(240)
+            action_layout = QVBoxLayout(action_frame)
+            action_layout.setContentsMargins(12, 12, 12, 12)
+            action_layout.setSpacing(8)
+            action_layout.addWidget(SubtitleLabel(_('tab_actions_title')))
+            for item in action_widgets:
+                if item is None:
+                    action_layout.addSpacing(10)
+                elif isinstance(item, str):
+                    action_layout.addWidget(BodyLabel(item))
+                elif isinstance(item, QPushButton):
+                    action_layout.addWidget(self._mirror_button(item, action_frame))
+                elif isinstance(item, QWidget):
+                    action_layout.addWidget(item)
+            action_layout.addStretch(1)
+
+            section_layout.addWidget(config_frame, 1)
+            section_layout.addWidget(action_frame)
+            body_layout.addWidget(section_row)
+
+        body_layout.addStretch(1)
+        page_layout.addWidget(
+            self._make_scroll_area(tab_body) if scrollable else tab_body
+        )
         return page
 
     def _select_main_tab(self, index):
@@ -1321,8 +1423,10 @@ class MainWindow(QMainWindow):
 
         welcome_page = self._make_split_tab(
             self.about_tab,
-            [self.btn_wiki, None, self.btn_afdian, self.btn_bilibili,
-             self.btn_kofi, None, self.start_button],
+            [self.language_action_widget, None, self.btn_wiki,
+             None, self.start_button, None, _('about_sponsor_title'),
+             self.btn_afdian, self.btn_bilibili, self.btn_kofi,],
+            scrollable=False,
         )
         workbench_page = self._make_split_tab(
             self.input_output_tab,
@@ -1330,28 +1434,17 @@ class MainWindow(QMainWindow):
              self.open_output_button, self.clean_button],
         )
 
-        # Model settings share one primary tab and one configuration region.
-        model_config = QWidget(self)
-        self.model_config = model_config
-        model_config_layout = QVBoxLayout(model_config)
-        model_config_layout.setContentsMargins(0, 0, 0, 0)
-        model_config_layout.setSpacing(10)
+        # Keep each model configuration beside only the actions that affect it.
         self.settings_tab.setFrameShape(QFrame.StyledPanel)
         self.advanced_settings_tab.setFrameShape(QFrame.StyledPanel)
-        model_config_layout.addWidget(SubtitleLabel(_('models_asr_actions')))
-        model_config_layout.addWidget(self.settings_tab)
-        model_config_layout.addWidget(SubtitleLabel(_('models_translation_actions')))
-        model_config_layout.addWidget(self.advanced_settings_tab)
-        model_config_layout.addStretch(1)
-        self.settings_uvr_label.hide()
-        self.uvr_file.hide()
-        self.open_uvr_dir.hide()
-        models_page = self._make_split_tab(
-            model_config,
-            [_('models_asr_actions'), self.open_crispasr_dir,
-             self.refresh_speech_models_button, None,
-             _('models_translation_actions'), self.open_model_dir,
-             self.refresh_language_models_button, self.test_online_button],
+        models_page = self._make_sectioned_tab(
+            [
+                (_('models_asr_actions'), self.settings_tab,
+                 [self.open_crispasr_dir, self.refresh_speech_models_button]),
+                (_('models_translation_actions'), self.advanced_settings_tab,
+                 [self.open_model_dir, self.refresh_language_models_button,
+                  self.test_online_button]),
+            ]
         )
 
         save_dict_button = QPushButton(_('dict_save_btn'))
@@ -1364,32 +1457,23 @@ class MainWindow(QMainWindow):
             self.dict_tab, [save_dict_button, open_dict_dir_button]
         )
 
-        # All small tools live under a single primary tab.  The selected audio
-        # separation model belongs here rather than in speech model settings.
-        tools_config = QWidget(self)
-        self.tools_config = tools_config
-        tools_layout = QVBoxLayout(tools_config)
-        tools_layout.setContentsMargins(0, 0, 0, 0)
-        uvr_row = QHBoxLayout()
-        uvr_row.addWidget(BodyLabel(_('settings_uvr_label')))
-        self.uvr_file.show()
-        uvr_row.addWidget(self.uvr_file, 1)
-        tools_layout.addLayout(uvr_row)
-        tools_layout.addWidget(SubtitleLabel(_('tab_clip')))
-        tools_layout.addWidget(self.clip_tab)
-        tools_layout.addWidget(SubtitleLabel(_('tab_synth')))
-        tools_layout.addWidget(self.synth_tab)
-        tools_layout.addWidget(SubtitleLabel(_('tab_summarize')))
-        tools_layout.addWidget(self.summarize_tab)
-        tools_layout.addStretch(1)
-        tools_page = self._make_split_tab(
-            tools_config,
-            [_('tools_file_actions'), self.synth_video_browse_btn,
-             self.synth_srt_browse_btn, None,
-             _('tools_run_actions'), self.run_clip_button,
-             self.run_uvr_button, self.run_synth_button,
-             self.run_synth_audio_button, self.run_summarize_button, None,
-             self.open_uvr_dir],
+        # Tool configurations and their actions are paired section by section.
+        # The vocal-separation model is part of the vocal section itself.
+        tools_page = self._make_sectioned_tab(
+            [
+                (_('clip_tool_label'), self.clip_trim_config,
+                 [self.run_clip_button]),
+                (_('clip_vocal_split_label'), self.clip_vocal_config,
+                 [self.run_uvr_button, self.open_uvr_dir,
+                  self.refresh_uvr_models_button]),
+                (_('synth_label'), self.synth_video_config,
+                 [self.synth_video_browse_btn, self.synth_srt_browse_btn,
+                  self.run_synth_button]),
+                (_('synth_audio_label'), self.synth_audio_config,
+                 [self.run_synth_audio_button]),
+                (_('tab_summarize'), self.summarize_tab,
+                 [self.run_summarize_button]),
+            ]
         )
 
         # The log tab contains persistent logs only. Realtime output is detached
@@ -1481,6 +1565,12 @@ class MainWindow(QMainWindow):
             self.transcription_lang.setEnabled(self.enable_transcription_checkbox.isChecked())
         if hasattr(self, 'target_lang'):
             self.target_lang.setEnabled(self.enable_translation_checkbox.isChecked())
+
+    def selected_output_format(self):
+        """Return the legacy composite output value used by processing code."""
+        content = self.output_target_combo.currentData() or '原文'
+        file_type = self.output_type_combo.currentData() or 'SRT'
+        return f'{content}{file_type}'
 
     def _normalize_drop_paths(self, mime_data):
         paths = []
@@ -1578,6 +1668,7 @@ class MainWindow(QMainWindow):
             elif 'qwen3-1.7b' in backends:
                 self.asr_backend.setCurrentText('qwen3-1.7b')
 
+    def refresh_uvr_model_list(self):
         if hasattr(self, 'uvr_file'):
             current_uvr = self.uvr_file.currentText()
             uvr_lst = [i for i in os.listdir('separate') if i.endswith('onnx')]
@@ -1695,9 +1786,15 @@ class MainWindow(QMainWindow):
             # 迁移旧值：中文SRT/LRC → 目标SRT/LRC
             _fmt_migrate = {'中文SRT': '目标SRT', '中文LRC': '目标LRC'}
             _fmt_loaded = _fmt_migrate.get(_fmt_loaded, _fmt_loaded)
-            _fmt_idx = self.output_format.findData(_fmt_loaded)
-            if _fmt_idx >= 0:
-                self.output_format.setCurrentIndex(_fmt_idx)
+            _legacy_target, _legacy_type = _split_output_format(_fmt_loaded)
+            _output_target = gui_settings.get('output_target', _legacy_target)
+            _output_type = gui_settings.get('output_type', _legacy_type)
+            _target_idx = self.output_target_combo.findData(_output_target)
+            if _target_idx >= 0:
+                self.output_target_combo.setCurrentIndex(_target_idx)
+            _type_idx = self.output_type_combo.findData(_output_type)
+            if _type_idx >= 0:
+                self.output_type_combo.setCurrentIndex(_type_idx)
             subtitle_font = gui_settings.get('subtitle_font', '')
             if subtitle_font:
                 self.subtitle_font_combo.setCurrentText(subtitle_font)
@@ -1995,20 +2092,37 @@ class MainWindow(QMainWindow):
         self.about_title_label = TitleLabel(_("about_title"))
         self.about_layout.addWidget(self.about_title_label)
 
-        # mode
-        self.mode_text = QTextEdit()
-        self.mode_text.setReadOnly(True)
-        self.mode_text.setPlainText(_("about_text"))
-        self.about_layout.addWidget(self.mode_text)
+        # This control is assembled into the welcome tab's action panel.
+        self.language_action_widget = QWidget(self.about_tab)
+        language_layout = QHBoxLayout(self.language_action_widget)
+        language_layout.setContentsMargins(0, 0, 0, 0)
+        self.lang_selector_label = BodyLabel(_("lang_selector_label"))
+        language_layout.addWidget(self.lang_selector_label)
+        self.lang_selector = QComboBox()
+        self.lang_selector.addItem(_("lang_zh"))
+        self.lang_selector.addItem(_("lang_en"))
+        self.lang_selector.addItem(_("lang_ja"))
+        lang_map = {"zh": 0, "en": 1, "ja": 2}
+        self.lang_selector.setCurrentIndex(lang_map.get(get_language(), 0))
+        self.lang_selector.currentIndexChanged.connect(self._on_language_changed)
+        language_layout.addWidget(self.lang_selector)
+
+        # Main welcome visual
+        self.about_avatar = AspectRatioPixmapLabel('avatar.png', self.about_tab)
+        self.about_avatar.setToolTip(_("about_title"))
+        self.about_layout.addWidget(self.about_avatar, 1)
+
+        # start
+        self.start_button = QPushButton(_("about_start_btn"))
+        self.start_button.clicked.connect(lambda: self.switchTo(self.input_output_tab))
+        self.about_layout.addWidget(self.start_button)
 
         # wiki button
         self.btn_wiki = QPushButton(_("about_wiki_btn"))
-        self.btn_wiki.clicked.connect(lambda: open_url("https://github.com/shinnpuru/VoiceTransl/wiki"))
+        self.btn_wiki.clicked.connect(lambda: open_url("https://github.com/shinnpuru/VoiceTransl"))
         self.about_layout.addWidget(self.btn_wiki)
 
         # sponsorship buttons
-        self.about_sponsor_title = TitleLabel(_("about_sponsor_title"))
-        self.about_layout.addWidget(self.about_sponsor_title)
         btn_layout = QHBoxLayout()
         self.btn_afdian = QPushButton(_("about_afdian_btn"))
         self.btn_bilibili = QPushButton(_("about_bilibili_btn"))
@@ -2026,10 +2140,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.btn_kofi)
         self.about_layout.addLayout(btn_layout)
 
-        # start
-        self.start_button = QPushButton(_("about_start_btn"))
-        self.start_button.clicked.connect(lambda: self.switchTo(self.input_output_tab))
-        self.about_layout.addWidget(self.start_button)
 
         self.addSubInterface(self.about_tab, FluentIcon.HEART, _("tab_about"), NavigationItemPosition.TOP)
 
@@ -2057,55 +2167,6 @@ class MainWindow(QMainWindow):
         self.input_output_tab = Widget("Home", self)
         self.input_output_layout = self.input_output_tab.vBoxLayout
 
-        # Language Selector
-        lang_layout = QHBoxLayout()
-        self.lang_selector_label = BodyLabel(_("lang_selector_label"))
-        lang_layout.addWidget(self.lang_selector_label)
-        self.lang_selector = QComboBox()
-        self.lang_selector.addItem(_("lang_zh"))
-        self.lang_selector.addItem(_("lang_en"))
-        self.lang_selector.addItem(_("lang_ja"))
-        # Set current index based on saved/current language
-        lang_map = {"zh": 0, "en": 1, "ja": 2}
-        self.lang_selector.setCurrentIndex(lang_map.get(get_language(), 0))
-        self.lang_selector.currentIndexChanged.connect(self._on_language_changed)
-        lang_layout.addWidget(self.lang_selector)
-        lang_layout.addStretch()
-
-        # Transcription Language
-        self.io_transcription_lang_label = BodyLabel(_("io_transcription_lang_label"))
-        lang_layout.addWidget(self.io_transcription_lang_label)
-        self.transcription_lang = QComboBox()
-        TRANS_LANG_CODES = ['ja', 'en', 'ko', 'ru', 'fr', 'zh']
-        for code in TRANS_LANG_CODES:
-            self.transcription_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), userData=code)
-        lang_layout.addWidget(self.transcription_lang)
-        lang_layout.addStretch()
-
-        # Target Translation Language
-        self.io_target_lang_label = BodyLabel(_("io_target_lang_label"))
-        lang_layout.addWidget(self.io_target_lang_label)
-        self.target_lang = QComboBox()
-        TARGET_LANG_CODES = ['zh-cn', 'zh-tw', 'en', 'ja', 'ko', 'ru', 'fr']
-        for code in TARGET_LANG_CODES:
-            self.target_lang.addItem(_(f"target_lang_{code.replace('-', '_')}"), userData=code)
-        lang_layout.addWidget(self.target_lang)
-        self.input_output_layout.addLayout(lang_layout)
-
-        # Processing Actions
-        processing_layout = QHBoxLayout()
-        self.enable_transcription_checkbox = QCheckBox(_("io_enable_transcription_checkbox"))
-        self.enable_transcription_checkbox.setChecked(True)
-        self.enable_transcription_checkbox.stateChanged.connect(self.update_processing_controls)
-        processing_layout.addWidget(self.enable_transcription_checkbox)
-        processing_layout.addStretch()
-        self.enable_translation_checkbox = QCheckBox(_("io_enable_translation_checkbox"))
-        self.enable_translation_checkbox.setChecked(False)
-        self.enable_translation_checkbox.stateChanged.connect(self.update_processing_controls)
-        processing_layout.addWidget(self.enable_translation_checkbox)
-        processing_layout.addStretch()
-        self.input_output_layout.addLayout(processing_layout)
-
         # Input Section (local files or URLs)
         self.io_input_label = BodyLabel(_("io_input_label"))
         self.input_output_layout.addWidget(self.io_input_label)
@@ -2115,7 +2176,25 @@ class MainWindow(QMainWindow):
         self.input_files_list.setPlaceholderText(_("io_input_placeholder"))
         self.input_output_layout.addWidget(self.input_files_list)
 
-        # Segment Section
+        # Transcription settings stay together.
+        self.input_output_layout.addWidget(SubtitleLabel(_("io_transcription_group_title")))
+        transcription_layout = QHBoxLayout()
+        self.enable_transcription_checkbox = QCheckBox(_("io_enable_transcription_checkbox"))
+        self.enable_transcription_checkbox.setChecked(True)
+        self.enable_transcription_checkbox.stateChanged.connect(self.update_processing_controls)
+        transcription_layout.addWidget(self.enable_transcription_checkbox)
+        transcription_layout.addStretch(1)
+        self.io_transcription_lang_label = BodyLabel(_("io_transcription_lang_label"))
+        transcription_layout.addWidget(self.io_transcription_lang_label)
+        self.transcription_lang = QComboBox()
+        trans_lang_codes = ['ja', 'en', 'ko', 'ru', 'fr', 'zh']
+        for code in trans_lang_codes:
+            self.transcription_lang.addItem(
+                _(f"target_lang_{code.replace('-', '_')}"), userData=code
+            )
+        transcription_layout.addWidget(self.transcription_lang)
+        self.input_output_layout.addLayout(transcription_layout)
+
         segment_layout = QHBoxLayout()
         self.enable_segment_checkbox = QCheckBox(_("io_segment_checkbox"))
         self.enable_segment_checkbox.stateChanged.connect(self.update_segment_controls)
@@ -2130,6 +2209,25 @@ class MainWindow(QMainWindow):
         segment_layout.addStretch()
         self.input_output_layout.addLayout(segment_layout)
 
+        # Translation settings stay together.
+        self.input_output_layout.addWidget(SubtitleLabel(_("io_translation_group_title")))
+        translation_layout = QHBoxLayout()
+        self.enable_translation_checkbox = QCheckBox(_("io_enable_translation_checkbox"))
+        self.enable_translation_checkbox.setChecked(False)
+        self.enable_translation_checkbox.stateChanged.connect(self.update_processing_controls)
+        translation_layout.addWidget(self.enable_translation_checkbox)
+        translation_layout.addStretch(1)
+        self.io_target_lang_label = BodyLabel(_("io_target_lang_label"))
+        translation_layout.addWidget(self.io_target_lang_label)
+        self.target_lang = QComboBox()
+        target_lang_codes = ['zh-cn', 'zh-tw', 'en', 'ja', 'ko', 'ru', 'fr']
+        for code in target_lang_codes:
+            self.target_lang.addItem(
+                _(f"target_lang_{code.replace('-', '_')}"), userData=code
+            )
+        translation_layout.addWidget(self.target_lang)
+        self.input_output_layout.addLayout(translation_layout)
+
         # Proxy Section
         self.io_proxy_label = BodyLabel(_("io_proxy_label"))
         self.input_output_layout.addWidget(self.io_proxy_label)
@@ -2138,6 +2236,7 @@ class MainWindow(QMainWindow):
         self.input_output_layout.addWidget(self.proxy_address)
 
         # Output Directory Section
+        self.input_output_layout.addWidget(SubtitleLabel(_("io_output_group_title")))
         self.io_output_dir_label = BodyLabel(_("io_output_dir_label"))
         self.input_output_layout.addWidget(self.io_output_dir_label)
         output_dir_layout = QHBoxLayout()
@@ -2160,23 +2259,27 @@ class MainWindow(QMainWindow):
         selection_layout.addStretch()
         self.input_output_layout.addLayout(selection_layout)
         
-        # Format Section
-        self.io_format_label = BodyLabel(_("io_format_label"))
-        self.input_output_layout.addWidget(self.io_format_label)
-        self.output_format = QComboBox()
-        for _fmt_val, _fmt_key in (
-            ('原文SRT', 'format_original_srt'),
-            ('原文LRC', 'format_original_lrc'),
-            ('目标LRC', 'format_target_lrc'),
-            ('双语LRC', 'format_bilingual_lrc'),
-            ('目标SRT', 'format_target_srt'),
-            ('双语SRT', 'format_bilingual_srt'),
+        # Subtitle target and file type are selected independently.
+        format_layout = QHBoxLayout()
+        self.io_output_target_label = BodyLabel(_("io_output_target_label"))
+        format_layout.addWidget(self.io_output_target_label)
+        self.output_target_combo = QComboBox()
+        for value, key in (
+            ('原文', 'output_target_original'),
+            ('目标', 'output_target_translated'),
+            ('双语', 'output_target_bilingual'),
         ):
-            self.output_format.addItem(_(_fmt_key), userData=_fmt_val)
-        _default_fmt_idx = self.output_format.findData('双语SRT')
-        if _default_fmt_idx >= 0:
-            self.output_format.setCurrentIndex(_default_fmt_idx)
-        self.input_output_layout.addWidget(self.output_format)
+            self.output_target_combo.addItem(_(key), userData=value)
+        self.output_target_combo.setCurrentIndex(0)
+        format_layout.addWidget(self.output_target_combo, 1)
+
+        self.io_output_type_label = BodyLabel(_("io_output_type_label"))
+        format_layout.addWidget(self.io_output_type_label)
+        self.output_type_combo = QComboBox()
+        self.output_type_combo.addItem(_("output_type_srt"), userData='SRT')
+        self.output_type_combo.addItem(_("output_type_lrc"), userData='LRC')
+        format_layout.addWidget(self.output_type_combo, 1)
+        self.input_output_layout.addLayout(format_layout)
 
 
         button_layout = QHBoxLayout()
@@ -2293,16 +2396,15 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.refresh_speech_models_button)
         self.settings_layout.addLayout(button_layout)
 
-        # UVR models move into speech settings for consistency
+        # Created here for config loading; displayed beside vocal separation.
         self.settings_uvr_label = BodyLabel(_("settings_uvr_label"))
-        self.settings_layout.addWidget(self.settings_uvr_label)
         self.uvr_file = QComboBox()
         uvr_lst = [i for i in os.listdir('separate') if i.endswith('onnx')]
         self.uvr_file.addItems(uvr_lst)
-        self.settings_layout.addWidget(self.uvr_file)
         self.open_uvr_dir = QPushButton(_("settings_open_uvr_btn"))
         self.open_uvr_dir.clicked.connect(lambda: open_path(os.path.join(os.getcwd(),'separate')))
-        self.settings_layout.addWidget(self.open_uvr_dir)
+        self.refresh_uvr_models_button = QPushButton(_("settings_refresh_uvr_btn"))
+        self.refresh_uvr_models_button.clicked.connect(self.refresh_uvr_model_list)
 
         self.addSubInterface(self.settings_tab, FluentIcon.SETTING, _("tab_settings"), NavigationItemPosition.TOP)
 
@@ -2400,13 +2502,15 @@ class MainWindow(QMainWindow):
         self.clip_layout = self.clip_tab.vBoxLayout
 
         # Clip Section
-        self.clip_tool_label = BodyLabel(_("clip_tool_label"))
-        self.clip_layout.addWidget(self.clip_tool_label)
+        self.clip_trim_config = QWidget(self.clip_tab)
+        clip_trim_layout = QVBoxLayout(self.clip_trim_config)
+        clip_trim_layout.setContentsMargins(0, 0, 0, 0)
+        clip_trim_layout.setSpacing(8)
         self.clip_files_list = QTextEdit()
         self.clip_files_list.setAcceptDrops(True)
         self._bind_drop_event(self.clip_files_list)
         self.clip_files_list.setPlaceholderText(_("clip_placeholder"))
-        self.clip_layout.addWidget(self.clip_files_list)
+        clip_trim_layout.addWidget(self.clip_files_list)
 
         hbox = QHBoxLayout()
         left_v = QVBoxLayout()
@@ -2426,24 +2530,37 @@ class MainWindow(QMainWindow):
 
         hbox.addLayout(left_v)
         hbox.addLayout(right_v)
-        self.clip_layout.addLayout(hbox)
+        clip_trim_layout.addLayout(hbox)
 
         self.run_clip_button = QPushButton(_("clip_run_btn"))
         self.run_clip_button.clicked.connect(self.run_clip)
-        self.clip_layout.addWidget(self.run_clip_button)
+        clip_trim_layout.addWidget(self.run_clip_button)
+        self.clip_layout.addWidget(self.clip_trim_config)
 
         # Vocal Split
-        self.clip_vocal_split_label = BodyLabel(_("clip_vocal_split_label"))
-        self.clip_layout.addWidget(self.clip_vocal_split_label)
+        self.clip_vocal_config = QWidget(self.clip_tab)
+        clip_vocal_layout = QVBoxLayout(self.clip_vocal_config)
+        clip_vocal_layout.setContentsMargins(0, 0, 0, 0)
+        clip_vocal_layout.setSpacing(8)
+        # Keep the selected separation model immediately beside this tool's
+        # input configuration instead of in the speech-model settings.
+        uvr_model_layout = QHBoxLayout()
+        uvr_model_layout.addWidget(self.settings_uvr_label)
+        uvr_model_layout.addWidget(self.uvr_file, 1)
+        clip_vocal_layout.addLayout(uvr_model_layout)
+
         self.uvr_file_list = QTextEdit()
         self.uvr_file_list.setAcceptDrops(True)
         self._bind_drop_event(self.uvr_file_list)
         self.uvr_file_list.setPlaceholderText(_("clip_vocal_placeholder"))
-        self.clip_layout.addWidget(self.uvr_file_list)
+        clip_vocal_layout.addWidget(self.uvr_file_list)
 
         self.run_uvr_button = QPushButton(_("clip_vocal_run_btn"))
         self.run_uvr_button.clicked.connect(self.run_vocal_split)
-        self.clip_layout.addWidget(self.run_uvr_button)
+        clip_vocal_layout.addWidget(self.run_uvr_button)
+        clip_vocal_layout.addWidget(self.open_uvr_dir)
+        clip_vocal_layout.addWidget(self.refresh_uvr_models_button)
+        self.clip_layout.addWidget(self.clip_vocal_config)
 
         self.addSubInterface(self.clip_tab, FluentIcon.DEVELOPER_TOOLS, _("tab_clip"), NavigationItemPosition.TOP)
 
@@ -2452,9 +2569,10 @@ class MainWindow(QMainWindow):
         self.synth_layout = self.synth_tab.vBoxLayout
 
         # Video Synth
-        self.synth_label = BodyLabel(_("synth_label"))
-        self.synth_layout.addWidget(self.synth_label)
-
+        self.synth_video_config = QWidget(self.synth_tab)
+        synth_video_layout = QVBoxLayout(self.synth_video_config)
+        synth_video_layout.setContentsMargins(0, 0, 0, 0)
+        synth_video_layout.setSpacing(8)
         # Video Files
         vbox_video = QHBoxLayout()
         self.synth_video_label = BodyLabel(_("synth_video_label"))
@@ -2462,13 +2580,13 @@ class MainWindow(QMainWindow):
         self.synth_video_browse_btn = QPushButton(_("synth_browse_video_btn"))
         self.synth_video_browse_btn.clicked.connect(self.browse_synth_video)
         vbox_video.addWidget(self.synth_video_browse_btn)
-        self.synth_layout.addLayout(vbox_video)
+        synth_video_layout.addLayout(vbox_video)
         
         self.synth_video_files_list = QTextEdit()
         self.synth_video_files_list.setAcceptDrops(True)
         self._bind_drop_event(self.synth_video_files_list)
         self.synth_video_files_list.setPlaceholderText(_("synth_video_placeholder"))
-        self.synth_layout.addWidget(self.synth_video_files_list)
+        synth_video_layout.addWidget(self.synth_video_files_list)
 
         # Subtitle Files
         vbox_srt = QHBoxLayout()
@@ -2477,13 +2595,13 @@ class MainWindow(QMainWindow):
         self.synth_srt_browse_btn = QPushButton(_("synth_browse_srt_btn"))
         self.synth_srt_browse_btn.clicked.connect(self.browse_synth_srt)
         vbox_srt.addWidget(self.synth_srt_browse_btn)
-        self.synth_layout.addLayout(vbox_srt)
+        synth_video_layout.addLayout(vbox_srt)
 
         self.synth_srt_files_list = QTextEdit()
         self.synth_srt_files_list.setAcceptDrops(True)
         self._bind_drop_event(self.synth_srt_files_list)
         self.synth_srt_files_list.setPlaceholderText(_("synth_srt_placeholder"))
-        self.synth_layout.addWidget(self.synth_srt_files_list)
+        synth_video_layout.addWidget(self.synth_srt_files_list)
 
         hbox = QHBoxLayout()
 
@@ -2505,19 +2623,23 @@ class MainWindow(QMainWindow):
         self.run_synth_button = QPushButton(_("synth_run_btn"))
         self.run_synth_button.clicked.connect(self.run_synth)
         hbox.addWidget(self.run_synth_button)
-        self.synth_layout.addLayout(hbox)
+        synth_video_layout.addLayout(hbox)
+        self.synth_layout.addWidget(self.synth_video_config)
 
         # Audio Synth
-        self.synth_audio_label = BodyLabel(_("synth_audio_label"))
-        self.synth_layout.addWidget(self.synth_audio_label)
+        self.synth_audio_config = QWidget(self.synth_tab)
+        synth_audio_layout = QVBoxLayout(self.synth_audio_config)
+        synth_audio_layout.setContentsMargins(0, 0, 0, 0)
+        synth_audio_layout.setSpacing(8)
         self.synth_audio_files_list = QTextEdit()
         self.synth_audio_files_list.setAcceptDrops(True)
         self._bind_drop_event(self.synth_audio_files_list)
         self.synth_audio_files_list.setPlaceholderText(_("synth_audio_placeholder"))
-        self.synth_layout.addWidget(self.synth_audio_files_list)
+        synth_audio_layout.addWidget(self.synth_audio_files_list)
         self.run_synth_audio_button = QPushButton(_("synth_audio_run_btn"))
         self.run_synth_audio_button.clicked.connect(self.run_synth_audio)
-        self.synth_layout.addWidget(self.run_synth_audio_button)
+        synth_audio_layout.addWidget(self.run_synth_audio_button)
+        self.synth_layout.addWidget(self.synth_audio_config)
 
         self.addSubInterface(self.synth_tab, FluentIcon.DEVELOPER_TOOLS, _("tab_synth"), NavigationItemPosition.TOP)
 
@@ -3319,7 +3441,7 @@ class MainWorker(QObject):
         after_dict = self.master.after_dict.toPlainText()
         param_crispasr = self.master.param_crispasr.toPlainText()
         param_llama = self.master.param_llama.toPlainText()
-        selected_output_format = self.master.output_format.currentData()
+        selected_output_format = self.master.selected_output_format()
         output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
         use_input_dir = self.master.use_input_dir_checkbox.isChecked()
         enable_segment = self.master.enable_segment_checkbox.isChecked()
