@@ -55,4 +55,4 @@ VoiceTransl是一站式离线AI视频字幕生成和翻译软件，支持Mac和W
 
 ## 如果对你有帮助的话请给一个Star!
 
-![Star History Chart](https://api.star-history.com/svg?repos=shinnpuru/VoiceTransl&type=Date)
+![Star History Chart](https://star-history.dera.page/svg?repos=shinnpuru/VoiceTransl&type=Date)
