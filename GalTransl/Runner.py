@@ -36,6 +36,30 @@ class _ExceptionOnlyConsoleFilter(logging.Filter):
         return bool(record.exc_info)
 
 
+class _UnicodeSafeStream:
+    """Proxy a text stream and replace characters unsupported by its codec."""
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, text):
+        try:
+            return self._stream.write(text)
+        except UnicodeEncodeError:
+            encoding = getattr(self._stream, 'encoding', None) or 'utf-8'
+            safe_text = text.encode(encoding, errors='replace').decode(encoding)
+            return self._stream.write(safe_text)
+
+    def flush(self):
+        return self._stream.flush()
+
+    def isatty(self):
+        return self._stream.isatty()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
 class _ServerStatusFilter(logging.Filter):
     """For server-started jobs: only let through key status messages.
 
@@ -138,7 +162,7 @@ async def run_galtransl(cfg: CProjectConfig, translator: str, stop_event=None):
     is_server = getattr(cfg, "non_interactive", False)
     if is_server:
         # Server job: 轻量控制台输出（仅关键状态），不使用 alive_bar
-        handler = logging.StreamHandler(stream=sys.stdout)
+        handler = logging.StreamHandler(stream=_UnicodeSafeStream(sys.stdout))
         handler.setFormatter(CONSOLE_FORMAT)
         handler.addFilter(_thread_filter)
         # 当 GALTRANSL_VERBOSE_STDOUT 环境变量存在时，跳过 _ServerStatusFilter，
@@ -147,7 +171,7 @@ async def run_galtransl(cfg: CProjectConfig, translator: str, stop_event=None):
             handler.addFilter(_ServerStatusFilter())
     else:
         # CLI job: 完整终端输出 + alive_bar
-        handler = logging.StreamHandler(stream=sys.stdout)
+        handler = logging.StreamHandler(stream=_UnicodeSafeStream(sys.stdout))
         handler.setFormatter(CONSOLE_FORMAT)
         handler.addFilter(_thread_filter)
         if not getattr(cfg, "print_translation_log_in_terminal", True):

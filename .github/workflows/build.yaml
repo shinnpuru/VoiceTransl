@@ -1,9 +1,15 @@
 name: Create Executable
+
 on:
   push:
     tags:
       - '*'
   workflow_dispatch:
+
+env:
+  LLAMA_CPP_VERSION: b10430
+  CRISPASR_VERSION: v0.8.28
+
 jobs:
   pyinstaller-build:
     runs-on: ${{ matrix.os }}
@@ -14,10 +20,14 @@ jobs:
             name: App-windows
             spec: app.spec
             requirements: requirements.txt
+            artifact_path: dist/VoiceTransl/
+            compression_level: 6
           - os: macos-latest
             name: App-macos
             spec: app-macos.spec
             requirements: requirements-macos.txt
+            artifact_path: artifact/VoiceTransl-macos.zip
+            compression_level: 0
     steps:
       - uses: actions/checkout@v4
 
@@ -28,19 +38,139 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install pyinstaller
-          pip install -r ${{ matrix.requirements }}
+          python -m pip install pyinstaller
+          python -m pip install -r ${{ matrix.requirements }}
+
+      - name: Download llama-server and CrispASR (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nativeRoot = Join-Path $env:RUNNER_TEMP 'voicetransl-native'
+          $llamaExtract = Join-Path $nativeRoot 'llama-extracted'
+          $crispExtract = Join-Path $nativeRoot 'crispasr-extracted'
+          New-Item -ItemType Directory -Force -Path $llamaExtract, $crispExtract | Out-Null
+
+          $llamaArchive = Join-Path $nativeRoot 'llama.zip'
+          $llamaUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_CPP_VERSION/llama-$env:LLAMA_CPP_VERSION-bin-win-cpu-x64.zip"
+          Invoke-WebRequest -Uri $llamaUrl -OutFile $llamaArchive
+          Expand-Archive -LiteralPath $llamaArchive -DestinationPath $llamaExtract -Force
+          $llamaServer = Get-ChildItem -LiteralPath $llamaExtract -Recurse -File -Filter 'llama-server.exe' | Select-Object -First 1
+          if (-not $llamaServer) {
+            throw 'llama-server.exe was not found in the downloaded llama.cpp archive'
+          }
+          New-Item -ItemType Directory -Force -Path 'llama' | Out-Null
+          Copy-Item -Path (Join-Path $llamaServer.Directory.FullName '*') -Destination 'llama' -Recurse -Force
+
+          $crispArchive = Join-Path $nativeRoot 'crispasr.zip'
+          $crispUrl = "https://github.com/CrispStrobe/CrispASR/releases/download/$env:CRISPASR_VERSION/crispasr-windows-x86_64-cpu.zip"
+          Invoke-WebRequest -Uri $crispUrl -OutFile $crispArchive
+          Expand-Archive -LiteralPath $crispArchive -DestinationPath $crispExtract -Force
+          $crispExecutable = Get-ChildItem -LiteralPath $crispExtract -Recurse -File -Filter 'crispasr.exe' | Select-Object -First 1
+          if (-not $crispExecutable) {
+            throw 'crispasr.exe was not found in the downloaded CrispASR archive'
+          }
+          New-Item -ItemType Directory -Force -Path 'crispasr' | Out-Null
+          Copy-Item -Path (Join-Path $crispExecutable.Directory.FullName '*') -Destination 'crispasr' -Recurse -Force
+
+          Set-Content -LiteralPath 'llama/param.txt' -Encoding utf8 -Value 'llama/llama-server -m llama/$model_file -ngl $num_layers --port $port'
+          Set-Content -LiteralPath 'crispasr/param.txt' -Encoding utf8 -Value '$crispasr_executable --backend $backend --model $model_file --aligner-model $aligner_file --force-aligner --language $language --output-srt --output-file $output_file --file $input_file --vad --vad-max-speech-duration-s 12 --vad-min-silence-duration-ms 200 --max-new-tokens 96 --frequency-penalty 0.8'
+
+      - name: Download llama-server and CrispASR (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          native_root="$RUNNER_TEMP/voicetransl-native"
+          mkdir -p "$native_root/llama-extracted" "$native_root/crispasr-extracted" llama crispasr
+
+          case "$(uname -m)" in
+            arm64) llama_arch='arm64' ;;
+            x86_64) llama_arch='x64' ;;
+            *) echo "Unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          llama_archive="$native_root/llama.tar.gz"
+          llama_url="https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_CPP_VERSION}/llama-${LLAMA_CPP_VERSION}-bin-macos-${llama_arch}.tar.gz"
+          curl --fail --location --retry 3 "$llama_url" --output "$llama_archive"
+          tar -xzf "$llama_archive" -C "$native_root/llama-extracted"
+          llama_server="$(find "$native_root/llama-extracted" -type f -name 'llama-server' -print -quit)"
+          test -n "$llama_server" || { echo 'llama-server was not found in the downloaded llama.cpp archive' >&2; exit 1; }
+          cp -R "$(dirname "$llama_server")/." llama/
+          chmod +x llama/llama-server
+
+          crisp_archive="$native_root/crispasr.tar.gz"
+          crisp_url="https://github.com/CrispStrobe/CrispASR/releases/download/${CRISPASR_VERSION}/crispasr-macos.tar.gz"
+          curl --fail --location --retry 3 "$crisp_url" --output "$crisp_archive"
+          tar -xzf "$crisp_archive" -C "$native_root/crispasr-extracted"
+          crisp_executable="$(find "$native_root/crispasr-extracted" -type f -name 'crispasr' -print -quit)"
+          test -n "$crisp_executable" || { echo 'crispasr was not found in the downloaded CrispASR archive' >&2; exit 1; }
+          cp -R "$(dirname "$crisp_executable")/." crispasr/
+          chmod +x crispasr/crispasr
+
+          printf '%s\n' 'llama/llama-server -m llama/$model_file -ngl $num_layers --port $port' > llama/param.txt
+          printf '%s\n' '$crispasr_executable --backend $backend --model $model_file --aligner-model $aligner_file --force-aligner --language $language --output-srt --output-file $output_file --file $input_file --vad --vad-max-speech-duration-s 12 --vad-min-silence-duration-ms 200 --max-new-tokens 96 --frequency-penalty 0.8' > crispasr/param.txt
 
       - name: Build auxiliary executables
         run: |
-          pyinstaller separate.spec --distpath .
-          pyinstaller translate.spec --distpath .
+          python -m PyInstaller --clean --noconfirm separate.spec --distpath .
+          python -m PyInstaller --clean --noconfirm translate.spec --distpath .
+
+      - name: Prepare runtime directories
+        shell: bash
+        run: mkdir -p project
 
       - name: Build main executable
-        run: pyinstaller --clean --noconfirm ${{ matrix.spec }}
+        run: python -m PyInstaller --clean --noconfirm ${{ matrix.spec }}
+
+      - name: Verify bundled executables (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $requiredFiles = 'translate.exe', 'separate.exe', 'llama-server.exe', 'crispasr.exe'
+          foreach ($fileName in $requiredFiles) {
+            $matches = @(Get-ChildItem -LiteralPath 'dist' -Recurse -File -Filter $fileName)
+            if ($matches.Count -eq 0) {
+              throw "Required bundled executable is missing: $fileName"
+            }
+            $matches | ForEach-Object { Write-Host "Bundled $fileName -> $($_.FullName)" }
+          }
+
+      - name: Verify bundled executables (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for executable in translate separate llama-server crispasr; do
+            bundled_path="$(find dist -type f -name "$executable" -print -quit)"
+            test -n "$bundled_path" || { echo "Required bundled executable is missing: $executable" >&2; exit 1; }
+            test -x "$bundled_path" || { echo "Bundled file is not executable: $bundled_path" >&2; exit 1; }
+            echo "Bundled $executable -> $bundled_path"
+          done
+
+      - name: Package macOS app without expanding symlinks
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d dist/VoiceTransl.app || { echo 'dist/VoiceTransl.app is missing' >&2; exit 1; }
+
+          echo 'PyInstaller output sizes before packaging:'
+          du -sh dist/VoiceTransl dist/VoiceTransl.app
+
+          mkdir -p artifact
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/VoiceTransl.app artifact/VoiceTransl-macos.zip
+
+          test -s artifact/VoiceTransl-macos.zip || { echo 'macOS app archive is empty' >&2; exit 1; }
+          echo 'Final macOS archive:'
+          ls -lh artifact/VoiceTransl-macos.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: dist/
+          path: ${{ matrix.artifact_path }}
+          compression-level: ${{ matrix.compression_level }}
+          if-no-files-found: error

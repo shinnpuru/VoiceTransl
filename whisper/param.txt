@@ -1,1 +1,0 @@
-whisper/whisper-cli -m whisper/$whisper_file -osrt -l $language $input_file.wav -of $input_file --vad --vad-model whisper/ggml-silero-v5.1.2.bin

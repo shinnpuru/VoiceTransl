@@ -1,6 +1,22 @@
 import os
 import sys
 import argparse
+
+
+def _configure_utf8_stdio():
+    """Keep redirected translation logs lossless on Windows code pages."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, 'reconfigure', None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding='utf-8', errors='replace')
+        except (OSError, ValueError):
+            pass
+
+
+_configure_utf8_stdio()
+
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 # 基本配置，避免循环导入
