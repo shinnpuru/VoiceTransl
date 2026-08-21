@@ -121,10 +121,31 @@ header nav a:hover, header nav a:focus {
     line-height: 1.2;
 }
 
+#hero .main-title span {
+    color: #d9f1ff;
+    font-weight: 500;
+}
+
 #hero .subtitle {
     font-size: 1.5rem;
     font-weight: 300;
     margin-bottom: 1.5rem;
+}
+
+#hero .platforms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+}
+
+#hero .platforms span {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 0.85rem;
+    font-weight: 500;
 }
 
 #hero .badges img {
@@ -144,9 +165,9 @@ header nav a:hover, header nav a:focus {
 #hero .hero-image img {
     max-width: 100%;
     height: auto;
-    width: 512px; /* As per README */
+    width: 620px;
     border-radius: var(--border-radius);
-    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    box-shadow: 0 14px 32px rgba(0,0,0,0.25);
 }
 
 /* Buttons */

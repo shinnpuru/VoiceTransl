@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoiceTransl - 一站式AI视频字幕生成与翻译</title>
+    <title>VoiceTransl 聆译 - 一站式离线AI视频字幕生成与翻译</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,6 +23,7 @@
                 <a href="#download">下载</a>
                 <a href="#modes">模式</a>
                 <a href="#tutorial">教程</a>
+                <a href="https://github.com/shinnpuru/VoiceTransl/blob/main/README_EN.md" target="_blank" rel="noopener noreferrer">English</a>
                 <a href="https://github.com/shinnpuru/VoiceTransl" target="_blank" rel="noopener noreferrer">GitHub</a>
             </nav>
         </div>
@@ -32,19 +33,24 @@
         <section id="hero">
             <div class="container">
                 <div class="hero-content">
-                    <h1 class="main-title">VoiceTransl</h1>
-                    <p class="subtitle">一站式离线AI视频字幕生成和翻译软件</p>
+                    <h1 class="main-title">VoiceTransl <span>聆译</span></h1>
+                    <p class="subtitle">面向 macOS 与 Windows 的一站式离线AI视频字幕生成和翻译软件</p>
+                    <div class="platforms" aria-label="支持的平台与工作流">
+                        <span>Windows</span>
+                        <span>macOS</span>
+                        <span>离线优先</span>
+                    </div>
                     <div class="badges">
                         <img src="https://img.shields.io/github/v/release/shinnpuru/VoiceTransl" alt="Release"/>
                         <img src="https://img.shields.io/github/license/shinnpuru/VoiceTransl" alt="License"/>
                         <img src="https://img.shields.io/github/stars/shinnpuru/VoiceTransl" alt="Stars"/>
                     </div>
                     <a href="#download" class="btn btn-primary">获取最新版本</a>
-                    <a href="https://www.bilibili.com/video/BV1koZ6YuE1x" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">观看视频教程</a>
+                    <a href="https://www.bilibili.com/video/BV12FjN6iEmz" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">观看视频教程</a>
                     <p class="small-text">本项目基于 <a href="https://github.com/xd2333/GalTransl" target="_blank" rel="noopener noreferrer">Galtransl</a>，采用GPLv3许可。</p>
                 </div>
                 <div class="hero-image">
-                    <img src="title.jpg" alt="VoiceTransl Software Interface">
+                    <img src="title.jpg" alt="VoiceTransl 聆译新版工作台界面">
                 </div>
             </div>
         </section>
@@ -54,7 +60,7 @@
                 <div class="card text-center">
                     <h2><span class="material-icons">campaign</span> 优云智算Compshare开发者首选</h2>
                     <p class="intro-message">万卡RTX40系GPU资源+主流模型API服务，秒级响应，按量计费，新客免费用！点击下面图片一键直达！</p>
-                    <a href="https://www.compshare.cn/images/compshareImage-16qc028dgfoh?referral_code=1RFfR2FQ2FyEVRJMyrOn5d&ytag=GPU_YY-GH_simple" target="_blank" rel="noopener noreferrer">
+                    <a href="https://www.compshare.cn/images/compshareImage-16qc028dgfoh?referral_code=1RFfR2FQ2FyEVRJMyrOn5d&amp;ytag=GPU_YY-GH_simple" target="_blank" rel="noopener noreferrer">
                         <img src="sponsor.jpg" alt="优云智算Compshare" style="max-width: 50%; height: auto; border-radius: 8px; margin-top: 20px;">
                     </a>
                 </div>
@@ -91,9 +97,24 @@
                         <p>支持日语，英语，韩语，俄语，法语等多种语言。</p>
                     </div>
                     <div class="card">
+                        <div class="card-icon"><span class="material-icons">hearing</span></div>
+                        <h3>Qwen3-ASR 听写</h3>
+                        <p>使用 CrispASR 的 Qwen3-ASR 与强制对齐工作流，生成准确的带时间轴字幕。</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon"><span class="material-icons">graphic_eq</span></div>
+                        <h3>VAD 语音检测</h3>
+                        <p>自动识别音频中的语音段落，配合长音频分段处理提升听写效率。</p>
+                    </div>
+                    <div class="card">
                         <div class="card-icon"><span class="material-icons">book</span></div>
                         <h3>字典功能</h3>
                         <p>可以自定义翻译字典，替换输入输出内容。</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon"><span class="material-icons">auto_stories</span></div>
+                        <h3>世界书与台本</h3>
+                        <p>支持输入世界书、台本等参考资料，为角色、术语和上下文提供翻译依据。</p>
                     </div>
                     <div class="card">
                         <div class="card-icon"><span class="material-icons">cloud_download</span></div>
@@ -108,17 +129,17 @@
                     <div class="card">
                         <div class="card-icon"><span class="material-icons">transform</span></div>
                         <h3>媒体处理</h3>
-                        <p>支持音频切分，字幕合并和视频合成。</p>
-                    </div>
-                     <div class="card">
-                        <div class="card-icon"><span class="material-icons">summarize</span></div>
-                        <h3>字幕总结</h3>
-                        <p>可以自定义Prompt进行字幕内容总结。</p>
+                        <p>支持音频切分、字幕合并、视频合成，以及端到端批处理流程。</p>
                     </div>
                     <div class="card">
-                        <div class="card-icon"><span class="material-icons">graphic_eq</span></div>
-                        <h3>UVR人声分离</h3>
-                        <p>支持UVR5模型进行人声和背景音的分离。</p>
+                        <div class="card-icon"><span class="material-icons">summarize</span></div>
+                        <h3>视频总结</h3>
+                        <p>可自定义 Prompt，将视频内容总结为简短、带时间轴的文本。</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon"><span class="material-icons">record_voice_over</span></div>
+                        <h3>多模型人声分离</h3>
+                        <p>支持多种分离模型，将人声与伴奏分离，便于听写与后期处理。</p>
                     </div>
                 </div>
             </div>
@@ -127,7 +148,7 @@
         <section id="download" class="section bg-light">
             <div class="container">
                 <h2><span class="material-icons">download</span> 下载与安装</h2>
-                <p>下载最新版本的 VoiceTransl，解压后运行 <code>VoiceTransl.exe</code> 即可开始使用。</p>
+                <p>VoiceTransl 支持 Windows 与 macOS。前往 Releases 下载对应平台的最新构建，解压后即可开始使用。</p>
                 <a href="https://github.com/shinnpuru/VoiceTransl/releases/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-large">
                     <span class="material-icons">download</span> 下载最新版本
                 </a>
@@ -167,7 +188,7 @@
              <div class="container">
                 <h2><span class="material-icons">school</span> 视频教程</h2>
                 <p>详细使用说明请参照我们的Bilibili视频教程：</p>
-                <a href="https://www.bilibili.com/video/BV1koZ6YuE1x" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                <a href="https://www.bilibili.com/video/BV12FjN6iEmz" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
                     <span class="material-icons">play_circle_filled</span> 观看视频教程
                 </a>
             </div>
@@ -176,16 +197,17 @@
         <section id="star-history" class="section">
             <div class="container text-center">
                 <h2><span class="material-icons">star_rate</span> 如果对你有帮助的话请给一个Star!</h2>
-                <img src="https://api.star-history.com/svg?repos=shinnpuru/VoiceTransl&type=Date" alt="Star History Chart" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+                <img src="https://star-history.dera.page/svg?repos=shinnpuru/VoiceTransl&amp;type=Date" alt="Star History Chart" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+            </div>
         </section>
 
-        </section> <section id="sponsor" class="section bg-light">
+        <section id="sponsor" class="section bg-light">
             <div class="container text-center">
                 <h2><span class="material-icons">volunteer_activism</span> 支持项目</h2>
                 <p class="intro-message">如果您喜欢这个项目并希望支持开发，欢迎通过以下方式赞助。</p>
                 <div class="sponsor-options">
                     <div class="sponsor-card">
-                        <img src="https://img.shields.io/badge/-%E7%88%B1%E5%8F%91%E7%94%B5-D7498B?style=for-the-badge&logo=Afdian&logoColor=white" alt="爱发电" class="sponsor-badge">
+                        <img src="https://img.shields.io/badge/-%E7%88%B1%E5%8F%91%E7%94%B5-D7498B?style=for-the-badge&amp;logo=Afdian&amp;logoColor=white" alt="爱发电" class="sponsor-badge">
                         <h3>爱发电 (Afdian)</h3>
                         <p>支持微信和支付宝</p>
                         <a href="https://afdian.com/a/shinnpuru" target="_blank" rel="noopener noreferrer" class="btn btn-sponsor">
@@ -193,7 +215,7 @@
                         </a>
                     </div>
                     <div class="sponsor-card">
-                        <img src="https://img.shields.io/badge/-%E5%93%94%E5%93%A9%E5%93%94%E5%93%A9-%2523FB7299?style=for-the-badge&logo=bilibili&logoColor=white" alt="Bilibili" class="sponsor-badge">
+                        <img src="https://img.shields.io/badge/-%E5%93%94%E5%93%A9%E5%93%94%E5%93%A9-%2523FB7299?style=for-the-badge&amp;logo=bilibili&amp;logoColor=white" alt="Bilibili" class="sponsor-badge">
                         <h3>B站充电 (Bilibili)</h3>
                         <p>大会员可用免费B币</p>
                         <a href="https://space.bilibili.com/36464441" target="_blank" rel="noopener noreferrer" class="btn btn-sponsor">
@@ -201,7 +223,7 @@
                         </a>
                     </div>
                     <div class="sponsor-card">
-                        <img src="https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi" class="sponsor-badge">
+                        <img src="https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&amp;logo=ko-fi&amp;logoColor=white" alt="Ko-fi" class="sponsor-badge">
                         <h3>Ko-fi</h3>
                         <p>支持PayPal及信用卡</p>
                         <a href="https://ko-fi.com/U7U018MISY" target="_blank" rel="noopener noreferrer" class="btn btn-sponsor">
