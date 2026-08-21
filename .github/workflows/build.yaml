@@ -10,6 +10,9 @@ env:
   LLAMA_CPP_VERSION: b10430
   CRISPASR_VERSION: v0.8.28
 
+permissions:
+  contents: write
+
 jobs:
   pyinstaller-build:
     runs-on: ${{ matrix.os }}
@@ -20,8 +23,8 @@ jobs:
             name: App-windows
             spec: app.spec
             requirements: requirements.txt
-            artifact_path: dist/VoiceTransl/
-            compression_level: 6
+            artifact_path: artifact/VoiceTransl-windows.zip
+            compression_level: 0
           - os: macos-latest
             name: App-macos
             spec: app-macos.spec
@@ -167,6 +170,27 @@ jobs:
           echo 'Final macOS archive:'
           ls -lh artifact/VoiceTransl-macos.zip
 
+      - name: Package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath 'dist/VoiceTransl')) {
+            throw 'dist/VoiceTransl is missing'
+          }
+
+          New-Item -ItemType Directory -Force -Path 'artifact' | Out-Null
+          Compress-Archive `
+            -Path 'dist/VoiceTransl' `
+            -DestinationPath 'artifact/VoiceTransl-windows.zip' `
+            -CompressionLevel Optimal
+
+          $archive = Get-Item -LiteralPath 'artifact/VoiceTransl-windows.zip'
+          if ($archive.Length -eq 0) {
+            throw 'Windows app archive is empty'
+          }
+          Write-Host "Final Windows archive: $($archive.FullName) ($($archive.Length) bytes)"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -174,3 +198,38 @@ jobs:
           path: ${{ matrix.artifact_path }}
           compression-level: ${{ matrix.compression_level }}
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: pyinstaller-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: App-*
+          path: release
+          merge-multiple: true
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s release/VoiceTransl-windows.zip
+          test -s release/VoiceTransl-macos.zip
+          ls -lh release/*.zip
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/*.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              --verify-tag
+          fi
