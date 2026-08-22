@@ -2289,7 +2289,9 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event):
         # Hide window instead of cluttering the taskbar when minimized
         super().changeEvent(event)
-        if event.type() == QtCore.QEvent.WindowStateChange and self.isMinimized():
+        if (sys.platform != 'darwin'
+                and event.type() == QtCore.QEvent.WindowStateChange
+                and self.isMinimized()):
             if getattr(self, 'tray_icon', None):
                 QTimer.singleShot(0, self.hide)
                 self.tray_icon.showMessage("VoiceTransl", _("tray_minimized"), QSystemTrayIcon.Information, 2000)
@@ -4480,4 +4482,15 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     main_window = MainWindow()
     main_window.show()
+
+    if sys.platform == 'darwin':
+        def restore_macos_window(state=QtCore.Qt.ApplicationActive):
+            """Restore the main window when Finder or the Dock activates the app."""
+            if state == QtCore.Qt.ApplicationActive:
+                QTimer.singleShot(0, main_window.restore_from_tray)
+
+        app.applicationStateChanged.connect(restore_macos_window)
+        # The first activation can occur while MainWindow is still being built.
+        QTimer.singleShot(250, restore_macos_window)
+
     sys.exit(app.exec_())
