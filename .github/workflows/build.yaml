@@ -281,14 +281,36 @@ jobs:
           test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win.zip"
           test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip"
           test -s "release/VoiceTransl-${GITHUB_REF_NAME}-macos.zip"
+
+          # GitHub Releases limits each asset to less than 2 GiB. The CUDA
+          # package is larger, so convert it to a standard split ZIP that can
+          # be opened with 7-Zip after downloading both volumes.
+          cuda_archive="release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip"
+          cuda_full_archive="release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.full.zip"
+          mv "$cuda_archive" "$cuda_full_archive"
+          zip -s 1800m "$cuda_full_archive" --out "$cuda_archive"
+          rm "$cuda_full_archive"
+          test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.z01"
+
+          cat > "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda-INSTRUCTIONS.txt" <<EOF
+          Download both VoiceTransl-${GITHUB_REF_NAME}-win-cuda.z01 and VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip into the same directory, then open the .zip file with 7-Zip to extract the CUDA package.
+          EOF
+
+          while IFS= read -r -d '' release_asset; do
+            asset_size="$(stat -c '%s' "$release_asset")"
+            if (( asset_size >= 2147483648 )); then
+              echo "Release asset exceeds GitHub's 2 GiB limit: $release_asset ($asset_size bytes)" >&2
+              exit 1
+            fi
+          done < <(find release -maxdepth 1 -type f -print0)
           ls -lh release/*.zip
 
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/*.zip \
+            gh release upload "$GITHUB_REF_NAME" release/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
           else
-            gh release create "$GITHUB_REF_NAME" release/*.zip \
+            gh release create "$GITHUB_REF_NAME" release/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "$GITHUB_REF_NAME" \
               --generate-notes \
