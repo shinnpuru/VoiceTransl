@@ -5,6 +5,11 @@ on:
     tags:
       - '*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (for example: v1.30)'
+        required: true
+        default: 'v1.30'
 
 env:
   LLAMA_CPP_VERSION: b10430
@@ -17,22 +22,47 @@ jobs:
   pyinstaller-build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            name: App-windows
+            package_suffix: win
+            llama_variant: vulkan
             spec: app.spec
             requirements: requirements.txt
-            artifact_path: artifact/VoiceTransl-windows.zip
-            compression_level: 0
+          - os: windows-latest
+            package_suffix: win-cuda
+            llama_variant: cuda-12.4
+            spec: app.spec
+            requirements: requirements.txt
           - os: macos-latest
-            name: App-macos
+            package_suffix: macos
+            llama_variant: macos
             spec: app-macos.spec
             requirements: requirements-macos.txt
-            artifact_path: artifact/VoiceTransl-macos.zip
-            compression_level: 0
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve package name
+        shell: bash
+        env:
+          MANUAL_VERSION: ${{ inputs.version }}
+          PACKAGE_SUFFIX: ${{ matrix.package_suffix }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
+            package_version="$GITHUB_REF_NAME"
+          else
+            package_version="$MANUAL_VERSION"
+          fi
+          if [[ -z "$package_version" ]]; then
+            echo 'A package version is required for manual builds.' >&2
+            exit 1
+          fi
+          if [[ "$package_version" != v* ]]; then
+            package_version="v${package_version}"
+          fi
+          echo "PACKAGE_NAME=VoiceTransl-${package_version}-${PACKAGE_SUFFIX}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -54,8 +84,14 @@ jobs:
           $crispExtract = Join-Path $nativeRoot 'crispasr-extracted'
           New-Item -ItemType Directory -Force -Path $llamaExtract, $crispExtract | Out-Null
 
+          $llamaVariant = '${{ matrix.llama_variant }}'
+          $llamaAsset = switch ($llamaVariant) {
+            'vulkan' { "llama-$env:LLAMA_CPP_VERSION-bin-win-vulkan-x64.zip" }
+            'cuda-12.4' { "llama-$env:LLAMA_CPP_VERSION-bin-win-cuda-12.4-x64.zip" }
+            default { throw "Unsupported Windows llama.cpp variant: $llamaVariant" }
+          }
           $llamaArchive = Join-Path $nativeRoot 'llama.zip'
-          $llamaUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_CPP_VERSION/llama-$env:LLAMA_CPP_VERSION-bin-win-cpu-x64.zip"
+          $llamaUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_CPP_VERSION/$llamaAsset"
           Invoke-WebRequest -Uri $llamaUrl -OutFile $llamaArchive
           Expand-Archive -LiteralPath $llamaArchive -DestinationPath $llamaExtract -Force
           $llamaServer = Get-ChildItem -LiteralPath $llamaExtract -Recurse -File -Filter 'llama-server.exe' | Select-Object -First 1
@@ -65,8 +101,31 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'llama' | Out-Null
           Copy-Item -Path (Join-Path $llamaServer.Directory.FullName '*') -Destination 'llama' -Recurse -Force
 
+          if ($llamaVariant -eq 'cuda-12.4') {
+            # llama.cpp publishes the CUDA runtime/cuBLAS DLLs separately from the
+            # CUDA-enabled llama binaries. Both archives are required at runtime.
+            $cudaRuntimeExtract = Join-Path $nativeRoot 'cuda-runtime-extracted'
+            $cudaRuntimeArchive = Join-Path $nativeRoot 'cuda-runtime.zip'
+            New-Item -ItemType Directory -Force -Path $cudaRuntimeExtract | Out-Null
+            $cudaRuntimeAsset = 'cudart-llama-bin-win-cuda-12.4-x64.zip'
+            $cudaRuntimeUrl = "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_CPP_VERSION/$cudaRuntimeAsset"
+            Invoke-WebRequest -Uri $cudaRuntimeUrl -OutFile $cudaRuntimeArchive
+            Expand-Archive -LiteralPath $cudaRuntimeArchive -DestinationPath $cudaRuntimeExtract -Force
+            $cudaRuntimeDll = Get-ChildItem -LiteralPath $cudaRuntimeExtract -Recurse -File -Filter 'cudart64_12.dll' | Select-Object -First 1
+            if (-not $cudaRuntimeDll) {
+              throw 'cudart64_12.dll was not found in the downloaded llama.cpp CUDA runtime archive'
+            }
+            Copy-Item -Path (Join-Path $cudaRuntimeDll.Directory.FullName '*') -Destination 'llama' -Recurse -Force
+          }
+
+          # CrispASR's Vulkan and CUDA CLI archives are self-contained.
+          $crispAsset = switch ($llamaVariant) {
+            'vulkan' { 'crispasr-windows-x86_64-vulkan.zip' }
+            'cuda-12.4' { 'crispasr-windows-x86_64-cuda.zip' }
+            default { throw "Unsupported Windows CrispASR variant: $llamaVariant" }
+          }
           $crispArchive = Join-Path $nativeRoot 'crispasr.zip'
-          $crispUrl = "https://github.com/CrispStrobe/CrispASR/releases/download/$env:CRISPASR_VERSION/crispasr-windows-x86_64-cpu.zip"
+          $crispUrl = "https://github.com/CrispStrobe/CrispASR/releases/download/$env:CRISPASR_VERSION/$crispAsset"
           Invoke-WebRequest -Uri $crispUrl -OutFile $crispArchive
           Expand-Archive -LiteralPath $crispArchive -DestinationPath $crispExtract -Force
           $crispExecutable = Get-ChildItem -LiteralPath $crispExtract -Recurse -File -Filter 'crispasr.exe' | Select-Object -First 1
@@ -132,6 +191,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $requiredFiles = 'translate.exe', 'separate.exe', 'llama-server.exe', 'crispasr.exe'
+          if ('${{ matrix.llama_variant }}' -eq 'vulkan') {
+            $requiredFiles += 'ggml-vulkan.dll'
+          }
+          if ('${{ matrix.llama_variant }}' -eq 'cuda-12.4') {
+            $requiredFiles += 'ggml-cuda.dll', 'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll'
+          }
           foreach ($fileName in $requiredFiles) {
             $matches = @(Get-ChildItem -LiteralPath 'dist' -Recurse -File -Filter $fileName)
             if ($matches.Count -eq 0) {
@@ -152,6 +217,22 @@ jobs:
             echo "Bundled $executable -> $bundled_path"
           done
 
+      - name: Package Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath 'dist/VoiceTransl' -PathType Container)) {
+            throw 'dist/VoiceTransl is missing'
+          }
+          New-Item -ItemType Directory -Force -Path 'artifact' | Out-Null
+          $archivePath = Join-Path 'artifact' "$env:PACKAGE_NAME.zip"
+          Compress-Archive -LiteralPath 'dist/VoiceTransl' -DestinationPath $archivePath -CompressionLevel Optimal
+          if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+            throw "Windows app archive was not created: $archivePath"
+          }
+          Get-Item -LiteralPath $archivePath | Format-List FullName, Length
+
       - name: Package macOS app without expanding symlinks
         if: runner.os == 'macOS'
         shell: bash
@@ -164,39 +245,18 @@ jobs:
 
           mkdir -p artifact
           ditto -c -k --sequesterRsrc --keepParent \
-            dist/VoiceTransl.app artifact/VoiceTransl-macos.zip
+            dist/VoiceTransl.app "artifact/${PACKAGE_NAME}.zip"
 
-          test -s artifact/VoiceTransl-macos.zip || { echo 'macOS app archive is empty' >&2; exit 1; }
+          test -s "artifact/${PACKAGE_NAME}.zip" || { echo 'macOS app archive is empty' >&2; exit 1; }
           echo 'Final macOS archive:'
-          ls -lh artifact/VoiceTransl-macos.zip
-
-      - name: Package Windows app
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path -LiteralPath 'dist/VoiceTransl')) {
-            throw 'dist/VoiceTransl is missing'
-          }
-
-          New-Item -ItemType Directory -Force -Path 'artifact' | Out-Null
-          Compress-Archive `
-            -Path 'dist/VoiceTransl' `
-            -DestinationPath 'artifact/VoiceTransl-windows.zip' `
-            -CompressionLevel Optimal
-
-          $archive = Get-Item -LiteralPath 'artifact/VoiceTransl-windows.zip'
-          if ($archive.Length -eq 0) {
-            throw 'Windows app archive is empty'
-          }
-          Write-Host "Final Windows archive: $($archive.FullName) ($($archive.Length) bytes)"
+          ls -lh "artifact/${PACKAGE_NAME}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.artifact_path }}
-          compression-level: ${{ matrix.compression_level }}
+          name: ${{ env.PACKAGE_NAME }}
+          path: artifact/${{ env.PACKAGE_NAME }}.zip
+          compression-level: 0
           if-no-files-found: error
 
   release:
@@ -208,7 +268,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: App-*
+          pattern: VoiceTransl-*
           path: release
           merge-multiple: true
 
@@ -218,8 +278,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -s release/VoiceTransl-windows.zip
-          test -s release/VoiceTransl-macos.zip
+          test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win.zip"
+          test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip"
+          test -s "release/VoiceTransl-${GITHUB_REF_NAME}-macos.zip"
           ls -lh release/*.zip
 
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -233,3 +294,11 @@ jobs:
               --generate-notes \
               --verify-tag
           fi
+
+          # Remove assets from the legacy CPU-only release after the new assets
+          # have been uploaded successfully.
+          for legacy_asset in VoiceTransl-windows.zip VoiceTransl-macos.zip; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$legacy_asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --yes 2>/dev/null || true
+          done
