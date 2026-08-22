@@ -233,23 +233,35 @@ jobs:
           }
           Get-Item -LiteralPath $archivePath | Format-List FullName, Length
 
-      - name: Package macOS app without expanding symlinks
+      - name: Package macOS folder without app bundle
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
-          test -d dist/VoiceTransl.app || { echo 'dist/VoiceTransl.app is missing' >&2; exit 1; }
+          test -d dist/VoiceTransl || { echo 'dist/VoiceTransl is missing' >&2; exit 1; }
 
           echo 'PyInstaller output sizes before packaging:'
           du -sh dist/VoiceTransl dist/VoiceTransl.app
 
           mkdir -p artifact
-          ditto -c -k --sequesterRsrc --keepParent \
-            dist/VoiceTransl.app "artifact/${PACKAGE_NAME}.zip"
+          ditto -c -k --norsrc --keepParent \
+            dist/VoiceTransl "artifact/${PACKAGE_NAME}.zip"
 
-          test -s "artifact/${PACKAGE_NAME}.zip" || { echo 'macOS app archive is empty' >&2; exit 1; }
+          archive="artifact/${PACKAGE_NAME}.zip"
+          test -s "$archive" || { echo 'macOS folder archive is empty' >&2; exit 1; }
+          archive_listing="$RUNNER_TEMP/${PACKAGE_NAME}-contents.txt"
+          unzip -Z1 "$archive" > "$archive_listing"
+          grep -q '^VoiceTransl/' "$archive_listing" || { echo 'VoiceTransl folder is missing from the macOS archive' >&2; exit 1; }
+          if grep -qv '^VoiceTransl/' "$archive_listing"; then
+            echo 'The macOS archive must only contain the VoiceTransl folder' >&2
+            exit 1
+          fi
+          if grep -q '\.app/' "$archive_listing"; then
+            echo 'The macOS archive must not contain an app bundle' >&2
+            exit 1
+          fi
           echo 'Final macOS archive:'
-          ls -lh "artifact/${PACKAGE_NAME}.zip"
+          ls -lh "$archive"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

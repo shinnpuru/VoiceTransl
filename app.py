@@ -1,109 +1,11 @@
 import sys, os
-import shutil
-from pathlib import Path
-
 
 _FROZEN = hasattr(sys, '_MEIPASS')
-
-
-def _ensure_resource_link(source: Path, target: Path) -> None:
-    """Create or refresh a link to a read-only bundled resource."""
-    if target.is_symlink():
-        try:
-            if target.resolve(strict=False) == source.resolve(strict=False):
-                return
-        except OSError:
-            pass
-        target.unlink()
-    elif target.exists():
-        # Preserve user-created files and directories in the data directory.
-        return
-
-    target.symlink_to(source, target_is_directory=source.is_dir())
-
-
-def _copy_missing_tree(source: Path, target: Path) -> None:
-    """Copy bundled defaults without overwriting user data."""
-    if not source.is_dir():
-        target.mkdir(parents=True, exist_ok=True)
-        return
-
-    for source_item in source.rglob('*'):
-        relative = source_item.relative_to(source)
-        target_item = target / relative
-        if source_item.is_dir():
-            target_item.mkdir(parents=True, exist_ok=True)
-        elif not target_item.exists() and not target_item.is_symlink():
-            target_item.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_item, target_item)
-
-
-def _prepare_mutable_resource_dir(
-        resource_root: Path, data_root: Path, directory: str,
-        mutable_files: set[str]) -> None:
-    """Overlay writable files on top of a bundled resource directory."""
-    source_dir = resource_root / directory
-    target_dir = data_root / directory
-    target_dir.mkdir(parents=True, exist_ok=True)
-    if not source_dir.is_dir():
-        return
-
-    for source_item in source_dir.iterdir():
-        target_item = target_dir / source_item.name
-        if source_item.name in mutable_files:
-            if target_item.is_symlink():
-                # Migrate an older linked parameter file to writable storage.
-                content = target_item.read_bytes() if target_item.exists() else source_item.read_bytes()
-                target_item.unlink()
-                target_item.write_bytes(content)
-            elif not target_item.exists():
-                shutil.copy2(source_item, target_item)
-        else:
-            _ensure_resource_link(source_item, target_item)
-
-
-def _configure_working_directory() -> tuple[Path, Path]:
-    """Select resource and writable runtime roots without changing Windows."""
-    source_root = Path(__file__).resolve().parent
-    if not _FROZEN:
-        os.chdir(source_root)
-        return source_root, source_root
-
-    resource_root = Path(sys._MEIPASS).resolve()
-    if sys.platform != 'darwin':
-        # Keep the existing Windows/Linux frozen-app behavior unchanged.
-        os.chdir(resource_root)
-        return resource_root, resource_root
-
-    configured_data_root = os.environ.get('VOICETRANSL_DATA_DIR')
-    data_root = (
-        Path(configured_data_root).expanduser()
-        if configured_data_root
-        else Path.home() / 'Library' / 'Application Support' / 'VoiceTransl'
-    )
-    data_root.mkdir(parents=True, exist_ok=True)
-
-    for name in (
-            'assets', 'separate', 'plugins', 'ffmpeg', 'translate',
-            'translation_guidelines', 'icon.png', 'avatar.png'):
-        source = resource_root / name
-        if source.exists():
-            _ensure_resource_link(source, data_root / name)
-
-    _prepare_mutable_resource_dir(
-        resource_root, data_root, 'llama', {'param.txt'})
-    _prepare_mutable_resource_dir(
-        resource_root, data_root, 'crispasr', {'param.txt'})
-    _copy_missing_tree(resource_root / 'project', data_root / 'project')
-
-    os.chdir(data_root)
-    return resource_root, data_root
-
-
-_RESOURCE_ROOT, _RUNTIME_ROOT = _configure_working_directory()
+os.chdir(sys._MEIPASS) if _FROZEN else os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # PyInstaller 打包后使用独立 exe，源码运行时使用 python 脚本
 _TRANSLATE_CMD = ['translate/translate'] if _FROZEN else [sys.executable, 'translate.py']
 _SEPARATE_CMD = ['separate/separate'] if _FROZEN else [sys.executable, 'separate.py']
+import shutil
 import shlex
 import socket
 import tempfile
@@ -165,6 +67,9 @@ from bilibili_dl.bilibili_dl.Video import Video
 from bilibili_dl.bilibili_dl.downloader import download
 from bilibili_dl.bilibili_dl.utils import send_request
 from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
+from pathlib import Path
+
+
 NO_TRANSCRIPTION = '不进行听写'
 NO_TRANSLATION = '不进行翻译'
 
@@ -2289,9 +2194,7 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event):
         # Hide window instead of cluttering the taskbar when minimized
         super().changeEvent(event)
-        if (sys.platform != 'darwin'
-                and event.type() == QtCore.QEvent.WindowStateChange
-                and self.isMinimized()):
+        if event.type() == QtCore.QEvent.WindowStateChange and self.isMinimized():
             if getattr(self, 'tray_icon', None):
                 QTimer.singleShot(0, self.hide)
                 self.tray_icon.showMessage("VoiceTransl", _("tray_minimized"), QSystemTrayIcon.Information, 2000)
@@ -4482,15 +4385,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     main_window = MainWindow()
     main_window.show()
-
-    if sys.platform == 'darwin':
-        def restore_macos_window(state=QtCore.Qt.ApplicationActive):
-            """Restore the main window when Finder or the Dock activates the app."""
-            if state == QtCore.Qt.ApplicationActive:
-                QTimer.singleShot(0, main_window.restore_from_tray)
-
-        app.applicationStateChanged.connect(restore_macos_window)
-        # The first activation can occur while MainWindow is still being built.
-        QTimer.singleShot(250, restore_macos_window)
-
     sys.exit(app.exec_())
