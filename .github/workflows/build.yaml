@@ -163,7 +163,7 @@ jobs:
           Copy-Item -Path (Join-Path $crispExecutable.Directory.FullName '*') -Destination 'crispasr' -Recurse -Force
 
           Set-Content -LiteralPath 'llama/param.txt' -Encoding utf8 -Value 'llama/llama-server -m llama/$model_file -ngl $num_layers --port $port'
-          Set-Content -LiteralPath 'crispasr/param.txt' -Encoding utf8 -Value '$crispasr_executable --backend $backend --model $model_file --aligner-model $aligner_file --force-aligner --language $language --output-srt --output-file $output_file --file $input_file --vad --vad-max-speech-duration-s 12 --vad-min-silence-duration-ms 200 --max-new-tokens 96 --frequency-penalty 0.8'
+          Set-Content -LiteralPath 'crispasr/param.txt' -Encoding utf8 -Value '$crispasr_executable --backend $backend --model $model_file --aligner-model $aligner_file --force-aligner --language $language --output-srt --output-file $output_file --file $input_file --split-on-punct --vad --vad-model firered --vad-threshold 0.3 --vad-max-speech-duration-s 12 --vad-min-silence-duration-ms 200 --max-new-tokens 96 --frequency-penalty 0.8'
 
       - name: Build auxiliary executables
         run: |

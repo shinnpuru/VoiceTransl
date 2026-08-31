@@ -4315,6 +4315,10 @@ class MainWorker(QObject):
 
                     self._emit_status(_("status_segment_done"))
 
+                    # The full-resolution 16 kHz WAV is only used to create segments.
+                    if os.path.exists(wav_file):
+                        os.remove(wav_file)
+
                     # 分段处理已完成，跳过常规流程
                     tf = None
                 else:

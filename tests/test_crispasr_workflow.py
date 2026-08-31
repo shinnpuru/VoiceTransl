@@ -61,6 +61,9 @@ class CrispASRWorkflowTest(unittest.TestCase):
             backend="qwen3-1.7b",
         )
         self.assertIn("--force-aligner", command)
+        self.assertIn("--split-on-punct", command)
+        self.assertEqual(command[command.index("--vad-model") + 1], "firered")
+        self.assertEqual(command[command.index("--vad-threshold") + 1], "0.3")
         self.assertNotIn("--strict-pipeline", command)
         self.assertNotIn("--require-word-timestamps", command)
         aligner_arg = command[command.index("--aligner-model") + 1]
