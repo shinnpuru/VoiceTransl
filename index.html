@@ -1,266 +1,100 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoiceTransl 聆译 - 一站式离线AI视频字幕生成与翻译</title>
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="VoiceTransl 聆译：面向 Windows 与 macOS 的一站式离线 AI 视频字幕生成与翻译工具。从听写、翻译到视频合成，让内容跨越语言。">
+  <meta name="theme-color" content="#ffffff">
+  <title>VoiceTransl 聆译 — 让好内容，跨越语言。</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <div class="logo-title">
-                <span class="material-icons Micon">translate</span>
-                <h1>VoiceTransl</h1>
-            </div>
-            <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">
-                <span class="material-icons">menu</span>
-            </button>
-            <nav id="main-nav">
-                <a href="#features">特色</a>
-                <a href="#download">下载</a>
-                <a href="#modes">模式</a>
-                <a href="#tutorial">教程</a>
-                <a href="https://github.com/shinnpuru/VoiceTransl/blob/main/README_EN.md" target="_blank" rel="noopener noreferrer">English</a>
-                <a href="https://github.com/shinnpuru/VoiceTransl" target="_blank" rel="noopener noreferrer">GitHub</a>
-            </nav>
+  <a class="skip-link" href="#main">跳转到主要内容</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="wordmark" href="#hero" aria-label="VoiceTransl 聆译首页">VoiceTransl<span>聆译</span></a>
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="打开导航菜单"><span></span><span></span></button>
+      <nav id="main-nav" aria-label="主导航">
+        <a href="#features">功能</a><a href="#modes">使用模式</a><a href="#tutorial">教程</a><a href="#sponsor">支持项目</a>
+        <a href="https://github.com/shinnpuru/VoiceTransl/blob/main/README_EN.md" target="_blank" rel="noopener noreferrer" lang="en">English ↗</a>
+        <a class="nav-github" href="https://github.com/shinnpuru/VoiceTransl" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </nav>
+      <a class="button button-dark header-download" href="#download">下载聆译 <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero" id="hero" aria-labelledby="hero-title">
+      <div class="container hero-content">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> 离线优先 · 开源 AI 字幕工具</p>
+        <h1 id="hero-title">让好内容，<br>跨越语言。</h1>
+        <p class="hero-description">从一段声音，到全新的理解。<br>用聆译完成视频听写、字幕翻译与合成，让每一句话都被听见。</p>
+        <div class="hero-actions">
+          <a class="button button-dark" href="#download">获取 VoiceTransl <span aria-hidden="true">↗</span></a>
+          <a class="button button-light" href="https://www.bilibili.com/video/BV12FjN6iEmz" target="_blank" rel="noopener noreferrer">观看教程 <span aria-hidden="true">↗</span></a>
         </div>
-    </header>
-
-    <main>
-        <section id="hero">
-            <div class="container">
-                <div class="hero-content">
-                    <h1 class="main-title">VoiceTransl <span>聆译</span></h1>
-                    <p class="subtitle">面向 macOS 与 Windows 的一站式离线AI视频字幕生成和翻译软件</p>
-                    <div class="platforms" aria-label="支持的平台与工作流">
-                        <span>Windows</span>
-                        <span>macOS</span>
-                        <span>离线优先</span>
-                    </div>
-                    <div class="badges">
-                        <img src="https://img.shields.io/github/v/release/shinnpuru/VoiceTransl" alt="Release"/>
-                        <img src="https://img.shields.io/github/license/shinnpuru/VoiceTransl" alt="License"/>
-                        <img src="https://img.shields.io/github/stars/shinnpuru/VoiceTransl" alt="Stars"/>
-                    </div>
-                    <a href="#download" class="btn btn-primary">获取最新版本</a>
-                    <a href="https://www.bilibili.com/video/BV12FjN6iEmz" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">观看视频教程</a>
-                    <p class="small-text">本项目基于 <a href="https://github.com/xd2333/GalTransl" target="_blank" rel="noopener noreferrer">Galtransl</a>，采用GPLv3许可。</p>
-                </div>
-                <div class="hero-image">
-                    <img src="title.jpg" alt="VoiceTransl 聆译新版工作台界面">
-                </div>
-            </div>
-        </section>
-
-        <section id="ad" class="section bg-light">
-            <div class="container">
-                <div class="card text-center">
-                    <h2><span class="material-icons">campaign</span> 优云智算Compshare开发者首选</h2>
-                    <p class="intro-message">万卡RTX40系GPU资源+主流模型API服务，秒级响应，按量计费，新客免费用！点击下面图片一键直达！</p>
-                    <a href="https://www.compshare.cn/images/compshareImage-16qc028dgfoh?referral_code=1RFfR2FQ2FyEVRJMyrOn5d&amp;ytag=GPU_YY-GH_simple" target="_blank" rel="noopener noreferrer">
-                        <img src="sponsor.jpg" alt="优云智算Compshare" style="max-width: 50%; height: auto; border-radius: 8px; margin-top: 20px;">
-                    </a>
-                </div>
-            </div>
-        </section>
-
-        <section id="features" class="section">
-            <div class="container">
-                <h2><span class="material-icons">stars</span> 特色功能</h2>
-                <div class="feature-grid">
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">model_training</span></div>
-                        <h3>多种翻译模型</h3>
-                        <p>支持在线模型（任意OpenAI兼容接口）和本地模型（Sakura、Galtransl及Ollama、Llamacpp）。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">speed</span></div>
-                        <h3>GPU加速</h3>
-                        <p>支持AMD/NVIDIA/Intel GPU加速，翻译引擎支持调整显存占用。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">input</span></div>
-                        <h3>多种输入格式</h3>
-                        <p>支持音频、视频、SRT字幕文件。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">output</span></div>
-                        <h3>多种输出格式</h3>
-                        <p>支持SRT字幕、LRC字幕文件。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">language</span></div>
-                        <h3>多语言支持</h3>
-                        <p>支持日语，英语，韩语，俄语，法语等多种语言。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">hearing</span></div>
-                        <h3>Qwen3-ASR 听写</h3>
-                        <p>使用 CrispASR 的 Qwen3-ASR 与强制对齐工作流，生成准确的带时间轴字幕。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">graphic_eq</span></div>
-                        <h3>VAD 语音检测</h3>
-                        <p>自动识别音频中的语音段落，配合长音频分段处理提升听写效率。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">book</span></div>
-                        <h3>字典功能</h3>
-                        <p>可以自定义翻译字典，替换输入输出内容。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">auto_stories</span></div>
-                        <h3>世界书与台本</h3>
-                        <p>支持输入世界书、台本等参考资料，为角色、术语和上下文提供翻译依据。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">cloud_download</span></div>
-                        <h3>在线视频下载</h3>
-                        <p>支持从YouTube/Bilibili及媒体链接直接下载视频。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">list_alt</span></div>
-                        <h3>批量处理</h3>
-                        <p>支持文件和链接批量处理，自动识别文件类型。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">transform</span></div>
-                        <h3>媒体处理</h3>
-                        <p>支持音频切分、字幕合并、视频合成，以及端到端批处理流程。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">summarize</span></div>
-                        <h3>视频总结</h3>
-                        <p>可自定义 Prompt，将视频内容总结为简短、带时间轴的文本。</p>
-                    </div>
-                    <div class="card">
-                        <div class="card-icon"><span class="material-icons">record_voice_over</span></div>
-                        <h3>多模型人声分离</h3>
-                        <p>支持多种分离模型，将人声与伴奏分离，便于听写与后期处理。</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="download" class="section bg-light">
-            <div class="container">
-                <h2><span class="material-icons">download</span> 下载与安装</h2>
-                <p>VoiceTransl 支持 Windows 与 macOS。前往 Releases 下载对应平台的最新构建，解压后即可开始使用。</p>
-                <a href="https://github.com/shinnpuru/VoiceTransl/releases/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-large">
-                    <span class="material-icons">download</span> 下载最新版本
-                </a>
-            </div>
-        </section>
-
-        <section id="modes" class="section">
-            <div class="container">
-                <h2><span class="material-icons">tune</span> 使用模式</h2>
-                <p>本软件支持四种便捷模式，满足不同场景需求：</p>
-                <div class="modes-grid">
-                    <div class="mode-card">
-                        <div class="mode-icon"><span class="material-icons">get_app</span></div>
-                        <h3>下载模式</h3>
-                        <p>支持从YouTube/Bilibili直接下载视频。请填写视频链接，语音识别选择不进行听写，字幕翻译选择不进行翻译，然后点击运行按钮。</p>
-                    </div>
-                    <div class="mode-card">
-                        <div class="mode-icon"><span class="material-icons">translate</span></div>
-                        <h3>翻译模式</h3>
-                        <p>支持字幕翻译，支持多种翻译模型。请填写字幕文件，语音识别选择不进行听写，字幕翻译选择模型，然后点击运行按钮。</p>
-                    </div>
-                    <div class="mode-card">
-                        <div class="mode-icon"><span class="material-icons">mic</span></div>
-                        <h3>听写模式</h3>
-                        <p>支持音频听写，支持多种听写模型。请填写音视频文件或视频链接，语音识别选择模型，字幕翻译选择不进行翻译，然后点击运行按钮。</p>
-                    </div>
-                    <div class="mode-card">
-                        <div class="mode-icon"><span class="material-icons">all_inclusive</span></div>
-                        <h3>完整模式</h3>
-                        <p>支持从下载到翻译的完整流程。请填写音视频文件或视频链接，语音识别选择模型，字幕翻译选择模型，然后点击运行按钮。</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="tutorial" class="section bg-light">
-             <div class="container">
-                <h2><span class="material-icons">school</span> 视频教程</h2>
-                <p>详细使用说明请参照我们的Bilibili视频教程：</p>
-                <a href="https://www.bilibili.com/video/BV12FjN6iEmz" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
-                    <span class="material-icons">play_circle_filled</span> 观看视频教程
-                </a>
-            </div>
-        </section>
-
-        <section id="star-history" class="section">
-            <div class="container text-center">
-                <h2><span class="material-icons">star_rate</span> 如果对你有帮助的话请给一个Star!</h2>
-                <img src="https://star-history.dera.page/svg?repos=shinnpuru/VoiceTransl&amp;type=Date" alt="Star History Chart" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-            </div>
-        </section>
-
-        <section id="sponsor" class="section bg-light">
-            <div class="container text-center">
-                <h2><span class="material-icons">volunteer_activism</span> 支持项目</h2>
-                <p class="intro-message">如果您喜欢这个项目并希望支持开发，欢迎通过以下方式赞助。</p>
-                <div class="sponsor-options">
-                    <div class="sponsor-card">
-                        <img src="https://img.shields.io/badge/-%E7%88%B1%E5%8F%91%E7%94%B5-D7498B?style=for-the-badge&amp;logo=Afdian&amp;logoColor=white" alt="爱发电" class="sponsor-badge">
-                        <h3>爱发电 (Afdian)</h3>
-                        <p>支持微信和支付宝</p>
-                        <a href="https://afdian.com/a/shinnpuru" target="_blank" rel="noopener noreferrer" class="btn btn-sponsor">
-                            <span class="material-icons">open_in_new</span> 前往赞助
-                        </a>
-                    </div>
-                    <div class="sponsor-card">
-                        <img src="https://img.shields.io/badge/-%E5%93%94%E5%93%A9%E5%93%94%E5%93%A9-%2523FB7299?style=for-the-badge&amp;logo=bilibili&amp;logoColor=white" alt="Bilibili" class="sponsor-badge">
-                        <h3>B站充电 (Bilibili)</h3>
-                        <p>大会员可用免费B币</p>
-                        <a href="https://space.bilibili.com/36464441" target="_blank" rel="noopener noreferrer" class="btn btn-sponsor">
-                            <span class="material-icons">open_in_new</span> 前往充电
-                        </a>
-                    </div>
-                    <div class="sponsor-card">
-                        <img src="https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&amp;logo=ko-fi&amp;logoColor=white" alt="Ko-fi" class="sponsor-badge">
-                        <h3>Ko-fi</h3>
-                        <p>支持PayPal及信用卡</p>
-                        <a href="https://ko-fi.com/U7U018MISY" target="_blank" rel="noopener noreferrer" class="btn btn-sponsor">
-                            <span class="material-icons">open_in_new</span> 前往赞助
-                        </a>
-                    </div>
-                </div>
-                <p class="thanks-message">您的支持将帮助昕蒲持续改进和维护这个项目！</p>
-            </div>
-        </section>
-
-        <section id="disclaimer" class="section bg-dark text-light">
-            <div class="container">
-                <h2><span class="material-icons">gavel</span> 声明</h2>
-                <p>本软件仅供学习交流使用，不得用于商业用途。本软件不对任何使用者的行为负责，不保证翻译结果的准确性。使用本软件即代表您同意自行承担使用本软件的风险，包括但不限于版权风险、法律风险等。请遵守当地法律法规，不要使用本软件进行任何违法行为。</p>
-            </div>
-        </section>
-    </main>
-
-    <footer>
-        <div class="container">
-            <p>&copy; <span id="currentYear"></span> Shinnpuru. All rights reserved. <a href="https://github.com/shinnpuru/VoiceTransl/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GPLv3 Licensed</a>.</p>
+        <p class="platform-note">Windows &amp; macOS <span aria-hidden="true">·</span> GPLv3 开源</p>
+      </div>
+      <div class="container showcase">
+        <div class="product-frame">
+          <div class="frame-heading"><span>你的字幕工作台</span><span class="frame-label">VoiceTransl / 聆译</span></div>
+          <img src="title.jpg" width="2359" height="1639" alt="聆译工作台，包含文件输入、听写设置、翻译设置与字幕输出" fetchpriority="high">
         </div>
-    </footer>
-
-    <script>
-        // Simple script to set current year in footer
-        document.getElementById('currentYear').textContent = new Date().getFullYear();
-
-        // Toggle mobile menu
-        const menuToggle = document.getElementById('menu-toggle');
-        const mainNav = document.getElementById('main-nav');
-        if (menuToggle && mainNav) {
-            menuToggle.addEventListener('click', () => {
-                mainNav.classList.toggle('active');
-            });
-        }
-    </script>
+        <div class="showcase-note">
+          <p class="eyebrow">从声音开始</p>
+          <div class="waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <h2>听见。理解。<br>连接。</h2>
+          <p>让繁琐的字幕流程，<br>在一个工作台里完成。</p>
+          <a class="text-link" href="#modes">探索工作流 <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <div class="container workflow-strip" aria-label="处理流程"><span>导入音视频</span><b aria-hidden="true">→</b><span>AI 听写打轴</span><b aria-hidden="true">→</b><span>字幕翻译</span><b aria-hidden="true">→</b><span>导出与合成</span></div>
+    </section>
+    <section class="section container" id="features" aria-labelledby="features-title">
+      <div class="section-heading"><div><p class="eyebrow">为每一个翻译者</p><h2 id="features-title">从输入到输出，<br>每一步都更顺手。</h2></div><p>灵活选择模型，保留你的工作习惯。<br>将精力留给内容本身。</p></div>
+      <div class="highlight-grid">
+        <article class="highlight highlight-mint"><span class="highlight-label">01 / 语音识别</span><div class="highlight-symbol" aria-hidden="true">Aa<span>↘</span></div><h3>声音，成为文字。</h3><p>Qwen3-ASR 听写与强制对齐，配合语音检测，将音视频转为带时间轴的字幕。</p><a class="text-link" href="#modes" data-mode="transcribe">了解听写模式 <span aria-hidden="true">↗</span></a></article>
+        <article class="highlight highlight-lilac"><span class="highlight-label">02 / 字幕翻译</span><div class="highlight-symbol language-symbol" aria-hidden="true">译<span>A</span></div><h3>表达，跨越边界。</h3><p>连接在线或本地翻译模型，用字典、世界书与台本，让术语和上下文有据可依。</p><a class="text-link" href="#modes" data-mode="translate">了解翻译模式 <span aria-hidden="true">↗</span></a></article>
+        <article class="highlight highlight-peach"><span class="highlight-label">03 / 完整流程</span><div class="highlight-symbol" aria-hidden="true">↗<span>↗</span></div><h3>一个工作台，全程相伴。</h3><p>视频下载、批量处理、字幕合并与视频合成，把分散的步骤串成完整流程。</p><a class="text-link" href="#modes" data-mode="full">了解完整模式 <span aria-hidden="true">↗</span></a></article>
+      </div>
+      <div class="feature-grid"><article class="feature"><span class="feature-number">01</span><h3>多种翻译模型</h3><p>支持在线模型（任意OpenAI兼容接口）和本地模型（Sakura、Galtransl及Ollama、Llamacpp）。</p></article>
+<article class="feature"><span class="feature-number">02</span><h3>GPU加速</h3><p>支持AMD/NVIDIA/Intel GPU加速，翻译引擎支持调整显存占用。</p></article>
+<article class="feature"><span class="feature-number">03</span><h3>多种输入格式</h3><p>支持音频、视频、SRT字幕文件。</p></article>
+<article class="feature"><span class="feature-number">04</span><h3>多种输出格式</h3><p>支持SRT字幕、LRC字幕文件。</p></article>
+<article class="feature"><span class="feature-number">05</span><h3>多语言支持</h3><p>支持日语，英语，韩语，俄语，法语等多种语言。</p></article>
+<article class="feature"><span class="feature-number">06</span><h3>Qwen3-ASR 听写</h3><p>使用 CrispASR 的 Qwen3-ASR 与强制对齐工作流，生成准确的带时间轴字幕。</p></article>
+<article class="feature"><span class="feature-number">07</span><h3>VAD 语音检测</h3><p>自动识别音频中的语音段落，配合长音频分段处理提升听写效率。</p></article>
+<article class="feature"><span class="feature-number">08</span><h3>字典功能</h3><p>可以自定义翻译字典，替换输入输出内容。</p></article>
+<article class="feature"><span class="feature-number">09</span><h3>世界书与台本</h3><p>支持输入世界书、台本等参考资料，为角色、术语和上下文提供翻译依据。</p></article>
+<article class="feature"><span class="feature-number">10</span><h3>在线视频下载</h3><p>支持从YouTube/Bilibili及媒体链接直接下载视频。</p></article>
+<article class="feature"><span class="feature-number">11</span><h3>批量处理</h3><p>支持文件和链接批量处理，自动识别文件类型。</p></article>
+<article class="feature"><span class="feature-number">12</span><h3>媒体处理</h3><p>支持音频切分、字幕合并、视频合成，以及端到端批处理流程。</p></article>
+<article class="feature"><span class="feature-number">13</span><h3>视频总结</h3><p>可自定义 Prompt，将视频内容总结为简短、带时间轴的文本。</p></article>
+<article class="feature"><span class="feature-number">14</span><h3>多模型人声分离</h3><p>支持多种分离模型，将人声与伴奏分离，便于听写与后期处理。</p></article></div>
+    </section>
+    <section class="section modes-section" id="modes" aria-labelledby="modes-title">
+      <div class="container"><div class="section-heading"><div><p class="eyebrow">按你的方式使用</p><h2 id="modes-title">从你需要的那一步开始。</h2></div><p>只下载、只听写，或完成整个翻译流程。<br>四种模式，自由选择。</p></div>
+        <div class="mode-tabs" role="tablist" aria-label="使用模式">
+          <button id="tab-full" role="tab" aria-selected="true" aria-controls="panel-full" tabindex="0">完整模式 <span aria-hidden="true">↗</span></button>
+          <button id="tab-transcribe" role="tab" aria-selected="false" aria-controls="panel-transcribe" tabindex="-1">听写模式 <span aria-hidden="true">↗</span></button>
+          <button id="tab-translate" role="tab" aria-selected="false" aria-controls="panel-translate" tabindex="-1">翻译模式 <span aria-hidden="true">↗</span></button>
+          <button id="tab-download" role="tab" aria-selected="false" aria-controls="panel-download" tabindex="-1">下载模式 <span aria-hidden="true">↗</span></button>
+        </div>
+        <div class="mode-panel" id="panel-full" role="tabpanel" aria-labelledby="tab-full" tabindex="0"><div><p class="eyebrow">一站式字幕工作流</p><h3>从原始视频，到翻译字幕。</h3><p>填写音视频文件或视频链接，选择听写与翻译模型，在同一个流程中完成下载、识别和翻译。</p></div><ol><li>导入音视频文件或视频链接</li><li>语音识别：选择听写模型</li><li>字幕翻译：选择翻译模型</li><li>点击运行，等待输出结果</li></ol></div>
+        <div class="mode-panel" id="panel-transcribe" role="tabpanel" aria-labelledby="tab-transcribe" tabindex="0" hidden><div><p class="eyebrow">先把声音变成字幕</p><h3>为每一句话，找到时间轴。</h3><p>使用听写模型识别音视频中的语音，生成带时间轴的字幕，方便后续编辑或翻译。</p></div><ol><li>导入音视频文件或视频链接</li><li>语音识别：选择听写模型</li><li>字幕翻译：选择不进行翻译</li><li>点击运行，生成听写字幕</li></ol></div>
+        <div class="mode-panel" id="panel-translate" role="tabpanel" aria-labelledby="tab-translate" tabindex="0" hidden><div><p class="eyebrow">让已有字幕说另一种语言</p><h3>从字幕出发，连接新观众。</h3><p>导入已有字幕，使用在线或本地模型完成翻译，无需重新识别音频。</p></div><ol><li>导入字幕文件</li><li>语音识别：选择不进行听写</li><li>字幕翻译：选择翻译模型</li><li>点击运行，生成翻译字幕</li></ol></div>
+        <div class="mode-panel" id="panel-download" role="tabpanel" aria-labelledby="tab-download" tabindex="0" hidden><div><p class="eyebrow">为下一步准备好素材</p><h3>从一个链接开始。</h3><p>支持 YouTube、Bilibili 及媒体链接下载，将在线视频保存下来，留待后续处理。</p></div><ol><li>填写视频链接</li><li>语音识别：选择不进行听写</li><li>字幕翻译：选择不进行翻译</li><li>点击运行，下载视频素材</li></ol></div>
+      </div>
+    </section>
+    <section class="section container resources" id="tutorial" aria-labelledby="tutorial-title">
+      <div><p class="eyebrow">开始并不复杂</p><h2 id="tutorial-title">你的第一份字幕，<br>从这里开始。</h2><p>跟着视频教程，了解安装、模型配置与字幕工作流。</p><a class="button button-dark" href="https://www.bilibili.com/video/BV12FjN6iEmz" target="_blank" rel="noopener noreferrer">观看 Bilibili 教程 <span aria-hidden="true">↗</span></a></div>
+      <div class="resource-links"><a href="https://github.com/shinnpuru/VoiceTransl/blob/main/README.md" target="_blank" rel="noopener noreferrer"><span><small>使用指南</small>阅读项目文档</span><span aria-hidden="true">↗</span></a><a href="https://github.com/shinnpuru/VoiceTransl/issues" target="_blank" rel="noopener noreferrer"><span><small>一起改进</small>反馈问题与建议</span><span aria-hidden="true">↗</span></a><a href="https://github.com/shinnpuru/VoiceTransl" target="_blank" rel="noopener noreferrer"><span><small>开源社区</small>探索源代码 · 给项目一个 Star</span><span aria-hidden="true">↗</span></a></div>
+    </section>
+    <section class="download-section" id="download" aria-labelledby="download-title"><div class="container"><p class="eyebrow">你的下一段内容</p><h2 id="download-title">准备好，听见更多。</h2><p>下载适合你的 Windows 或 macOS 版本。<br>前往 Releases 获取最新构建，解压后开始使用。</p><a class="button button-dark" href="https://github.com/shinnpuru/VoiceTransl/releases/" target="_blank" rel="noopener noreferrer">下载最新版本 <span aria-hidden="true">↗</span></a><p class="download-note">在线与本地模型，按需选择。</p></div></section>
+    <section class="section container" id="sponsor" aria-labelledby="sponsor-title"><div class="section-heading"><div><p class="eyebrow">让开源持续生长</p><h2 id="sponsor-title">一起，让聆译更好。</h2></div><p>你的支持，将帮助昕蒲持续改进和维护项目。<br>也欢迎用一个 Star，为聆译加油。</p></div><div class="sponsor-grid"><a href="https://afdian.com/a/shinnpuru" target="_blank" rel="noopener noreferrer"><h3>爱发电 <span aria-hidden="true">↗</span></h3><p>支持微信和支付宝</p></a><a href="https://space.bilibili.com/36464441" target="_blank" rel="noopener noreferrer"><h3>B站充电 <span aria-hidden="true">↗</span></h3><p>大会员可用免费 B 币</p></a><a href="https://ko-fi.com/U7U018MISY" target="_blank" rel="noopener noreferrer"><h3>Ko-fi <span aria-hidden="true">↗</span></h3><p>支持 PayPal 及信用卡</p></a></div><details class="star-history" id="star-history"><summary>查看项目 Star 趋势</summary><img src="https://star-history.dera.page/svg?repos=shinnpuru/VoiceTransl&amp;type=Date" loading="lazy" alt="VoiceTransl 在 GitHub 上的 Star 增长趋势"></details></section>
+    <aside class="container partner" id="ad" aria-label="合作推荐"><div><p class="eyebrow">合作推荐 / 优云智算 Compshare</p><h3>在云端，体验聆译。</h3><p>GPU 算力与模型 API 服务，按量计费。无需配置本地环境，也能体验在线镜像。</p><a class="text-link" href="https://www.compshare.cn/images/compshareImage-16qc028dgfoh?referral_code=1RFfR2FQ2FyEVRJMyrOn5d&amp;ytag=GPU_YY-GH_simple" target="_blank" rel="noopener noreferrer">了解在线镜像 <span aria-hidden="true">↗</span></a></div><a href="https://www.compshare.cn/images/compshareImage-16qc028dgfoh?referral_code=1RFfR2FQ2FyEVRJMyrOn5d&amp;ytag=GPU_YY-GH_simple" target="_blank" rel="noopener noreferrer"><img src="sponsor.jpg" width="480" height="200" loading="lazy" alt="优云智算 Compshare 合作推荐"></a></aside>
+    <section class="container disclaimer" id="disclaimer" aria-labelledby="disclaimer-title"><h2 id="disclaimer-title">使用声明</h2><p>本软件仅供学习交流使用，不得用于商业用途。本软件不对任何使用者的行为负责，不保证翻译结果的准确性。使用本软件即代表您同意自行承担使用本软件的风险，包括但不限于版权风险、法律风险等。请遵守当地法律法规，不要使用本软件进行任何违法行为。</p></section>
+  </main>
+  <footer class="container"><div class="footer-top"><a class="wordmark" href="#hero">VoiceTransl<span>聆译</span></a><p>本项目基于 <a href="https://github.com/xd2333/GalTransl" target="_blank" rel="noopener noreferrer">GalTransl ↗</a></p></div><div class="footer-bottom"><p>© <span id="currentYear"></span> Shinnpuru. All rights reserved.</p><a href="https://github.com/shinnpuru/VoiceTransl/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GPLv3 Licensed ↗</a><a href="https://github.com/shinnpuru/VoiceTransl/blob/main/README_EN.md" target="_blank" rel="noopener noreferrer" lang="en">English ↗</a></div></footer>
 </body>
 </html>
