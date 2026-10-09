@@ -628,10 +628,12 @@ class ConcurrentTranslationPool:
 
             if tf_dict is None:  # 哨兵信号
                 result_queue.put(('done', worker_idx))
+                task_queue.task_done()
                 break
 
             if stop_event.is_set():
                 result_queue.put(('stopped', worker_idx))
+                task_queue.task_done()
                 continue
 
             # 执行翻译
@@ -641,6 +643,8 @@ class ConcurrentTranslationPool:
                 result_queue.put(('success', worker_idx))
             except Exception as e:
                 result_queue.put(('error', worker_idx, str(e)))
+            finally:
+                task_queue.task_done()
 
     @staticmethod
     def _translate_one_impl(tf_dict, worker_idx, project_dir, base_config_path,
@@ -923,6 +927,18 @@ class ConcurrentTranslationPool:
             return
         for _unused in range(self._max_concurrent):
             self._task_queue.put(None)
+
+    def wait_pending(self):
+        """Wait for this batch without shutting down workers needed by later files."""
+        if self._serial_mode:
+            return
+        with self._task_queue.all_tasks_done:
+            while self._task_queue.unfinished_tasks:
+                if self._stop_event.is_set():
+                    raise RuntimeError('Translation cancelled before segment merge')
+                if not any(t.is_alive() for t in self._active_threads):
+                    raise RuntimeError('Translation workers stopped before completing the batch')
+                self._task_queue.all_tasks_done.wait(0.2)
 
     def wait_all(self, timeout=600):
         """等待所有工作线程结束"""
@@ -3827,12 +3843,7 @@ class MainWorker(QObject):
         finally:
             stop_named_proc('crispasr')
             shutil.rmtree(work_dir, ignore_errors=True)
-            # 单文件流程中的 16k SRT 只是中间产物。
-            if intermediate_srt.endswith('.16k.srt') and os.path.exists(intermediate_srt):
-                try:
-                    os.remove(intermediate_srt)
-                except Exception:
-                    pass
+            # Keep the SRT until its caller has exported/merged the subtitles.
 
     def _get_audio_duration(self, audio_file):
         """获取音频文件时长（秒）"""
@@ -3900,6 +3911,14 @@ class MainWorker(QObject):
 
         base_name = os.path.basename(original_base_path)
 
+        if not segment_files:
+            raise RuntimeError('No audio segments to merge')
+
+        def require_subtitle(path):
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                raise RuntimeError(f'Missing or empty segment subtitle: {path}')
+            return path
+
         for i, segment_file in enumerate(segment_files):
             segment_name = os.path.basename(segment_file[:-4])  # 去掉 .wav，保留 .16k
             segment_dir = os.path.dirname(segment_file)
@@ -3907,24 +3926,20 @@ class MainWorker(QObject):
             # 收集分段的字幕文件（用于双语合并）
             if output_format in ('原文SRT', '双语SRT'):
                 orig_srt = os.path.join(segment_dir, segment_name + '.srt')
-                if os.path.exists(orig_srt):
-                    segment_srts_orig.append(orig_srt)
+                segment_srts_orig.append(require_subtitle(orig_srt))
 
             if output_format in ('目标SRT', '双语SRT'):
                 zh_srt = os.path.join(segment_dir, segment_name + '.tg.srt')
-                if os.path.exists(zh_srt):
-                    segment_srts_zh.append(zh_srt)
+                segment_srts_zh.append(require_subtitle(zh_srt))
 
             if output_format in ('原文LRC', '双语LRC'):
                 suffix = '.orig.lrc' if output_format == '双语LRC' else '.lrc'
                 orig_lrc = os.path.join(segment_dir, segment_name + suffix)
-                if os.path.exists(orig_lrc):
-                    segment_lrcs_orig.append(orig_lrc)
+                segment_lrcs_orig.append(require_subtitle(orig_lrc))
 
             if output_format in ('目标LRC', '双语LRC'):
                 zh_lrc = os.path.join(segment_dir, segment_name + '.lrc')
-                if os.path.exists(zh_lrc):
-                    segment_lrcs_zh.append(zh_lrc)
+                segment_lrcs_zh.append(require_subtitle(zh_lrc))
 
         # 生成最终的合并字幕文件
         if output_format in ('原文SRT', '双语SRT'):
@@ -4256,8 +4271,9 @@ class MainWorker(QObject):
                     # 需要分段处理
                     self._emit_status(_("status_segment_threshold", duration=total_duration, threshold=threshold_seconds))
 
-                    segment_dir = os.path.join('project', 'cache', 'segments', os.path.basename(base_path))
-                    os.makedirs(segment_dir, exist_ok=True)
+                    segments_root = Path('project/cache/segments')
+                    segments_root.mkdir(parents=True, exist_ok=True)
+                    segment_dir = tempfile.mkdtemp(prefix='audio_', dir=segments_root)
 
                     # 切分音频
                     segment_files, _unused = self._split_audio(wav_file, segment_duration_minutes, segment_dir)
@@ -4278,7 +4294,7 @@ class MainWorker(QObject):
                         segment_base = segment_file[:-4] # 去掉 .wav
                         segment_name = os.path.basename(segment_base)
 
-                        segment_json = os.path.join(transcribed_dir, segment_name + '.json')
+                        segment_json = os.path.join(segment_dir, segment_name + '.json')
                         self._process_single_audio(
                             segment_file,
                             asr_model_file,
@@ -4290,6 +4306,10 @@ class MainWorker(QObject):
                             start_named_proc,
                             stop_named_proc,
                         )
+
+                        if output_format in ('原文LRC', '双语LRC'):
+                            suffix = '.orig.lrc' if output_format == '双语LRC' else '.lrc'
+                            make_lrc(segment_json, segment_base + suffix)
 
                         # 立即提交该分段进行翻译
                         if need_translate:
@@ -4307,8 +4327,7 @@ class MainWorker(QObject):
                     # 等待所有分段翻译完成
                     if need_translate and segment_tfs:
                         self._emit_status(_("status_wait_segments"))
-                        self._translation_pool.done()
-                        self._translation_pool.wait_all(timeout=600)
+                        self._translation_pool.wait_pending()
 
                     # 合并所有片段的翻译结果
                     self._emit_status(_("status_merge_segments"))
@@ -4344,6 +4363,10 @@ class MainWorker(QObject):
                             lrc_name = os.path.basename(base_path + '.orig.lrc')
                         lrc_output = os.path.join(current_output_dir, lrc_name)
                         make_lrc(json_path, lrc_output)
+
+                    intermediate_srt = wav_file[:-4] + '.srt'
+                    if os.path.exists(intermediate_srt):
+                        os.remove(intermediate_srt)
 
                     # 清理临时文件
                     if os.path.exists(wav_file):
