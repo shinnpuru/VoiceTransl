@@ -720,6 +720,7 @@ class ConcurrentTranslationPool:
             proc_env = os.environ.copy()
             proc_env['PYTHONIOENCODING'] = 'utf-8'
             proc_env['PYTHONUTF8'] = '1'
+            proc_env['VOICETRANSL_PROGRESS'] = '1'
             if ConcurrentTranslationPool.verbose_galtransl:
                 proc_env['GALTRANSL_VERBOSE_STDOUT'] = '1'
 
@@ -742,6 +743,15 @@ class ConcurrentTranslationPool:
                 _trans_parser = _TranslationLogParser()
 
                 for line in iter(proc.stdout.readline, ''):
+                    if line.startswith('VOICETRANSL_PROGRESS '):
+                        try:
+                            progress = json.loads(line.split(' ', 1)[1])
+                            done, total = progress['done'], progress['total']
+                            msg_queue.put('status', _("translation_progress", base=base, done=done, total=total,
+                                percent=int(done * 100 / total) if total else 0, seconds=progress['seconds']))
+                            continue
+                        except (ValueError, KeyError, TypeError):
+                            pass
                     # 清除 ANSI 转义序列和控制字符
                     cleaned = _clean_control_chars(_strip_ansi(line.rstrip('\n\r')))
                     if not cleaned:

@@ -4,6 +4,7 @@ _current_lang = "zh"
 
 TRANSLATIONS = {
     "zh": {
+        "translation_progress": "[INFO] {base}：翻译已处理 {done}/{total} 句（{percent}%），已用时 {seconds} 秒；完成后将生成字幕。",
         "thinking_label": "翻译模型推理模式",
         "thinking_default": "跟随模型默认",
         "thinking_siliconflow": "关闭推理 — 硅基流动 / 通义千问",
@@ -363,6 +364,7 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [进程{idx}] 翻译进程已结束 (exit={retcode})",
     },
     "en": {
+        "translation_progress": "[INFO] {base}: processed {done}/{total} lines ({percent}%), {seconds}s elapsed; subtitles will be generated afterwards.",
         "thinking_label": "Translation model reasoning",
         "thinking_default": "Model default",
         "thinking_siliconflow": "Disable — SiliconFlow / Qwen",
@@ -724,6 +726,7 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [Worker {idx}] Translation process ended (exit={retcode})",
     },
     "ja": {
+        "translation_progress": "[INFO] {base}：翻訳処理 {done}/{total} 行（{percent}%）、経過 {seconds} 秒。処理後に字幕を生成します。",
         "thinking_label": "翻訳モデルの推論モード",
         "thinking_default": "モデルの既定値",
         "thinking_siliconflow": "無効 — SiliconFlow / Qwen",

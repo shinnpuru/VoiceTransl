@@ -519,6 +519,7 @@ async def doLLMTranslate(
     # ---- 7. 进入翻译阶段：进度条 + worker 协程池 ----
     with terminal_progress(
         should_print_translation_logs(projectConfig),
+        desktop=True,
         total=total_lines, title="翻译进度", unit=" line", enrich_print=False, dual_line=True,length=30
     ) as bar:
         projectConfig.bar = bar
