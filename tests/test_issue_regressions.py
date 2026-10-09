@@ -69,6 +69,20 @@ class InputTests(unittest.TestCase):
 
 
 class SubtitleOutputTests(unittest.TestCase):
+    def test_split_keeps_subsecond_tail_and_fails_on_missing_segment(self):
+        worker = SimpleNamespace(_get_audio_duration=lambda _: 60.5, _emit_status=lambda _: None)
+        with tempfile.TemporaryDirectory() as temp:
+            def split(command, **kwargs):
+                Path(command[-1]).write_bytes(b'audio')
+                return SimpleNamespace(returncode=0)
+            with patch('app.subprocess.run', side_effect=split):
+                segments, duration = MainWorker._split_audio(worker, 'input.wav', 1, temp)
+            self.assertEqual(len(segments), 2)
+            self.assertEqual(duration, 60.5)
+            with patch('app.subprocess.run', return_value=SimpleNamespace(returncode=1)):
+                with self.assertRaises(RuntimeError):
+                    MainWorker._split_audio(worker, 'input.wav', 1, temp)
+
     def test_translation_output_keeps_user_source_srt(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

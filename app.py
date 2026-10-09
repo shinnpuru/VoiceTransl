@@ -4038,10 +4038,11 @@ class MainWorker(QObject):
         segment_duration = segment_duration_minutes * 60  # 转换为秒
 
         total_duration = self._get_audio_duration(audio_file)
-        if total_duration == 0:
-            return None, 0
+        if total_duration <= 0:
+            raise RuntimeError('Cannot split audio with unknown or zero duration')
 
-        num_segments = int(total_duration // segment_duration) + (1 if total_duration % segment_duration > 1 else 0)
+        import math
+        num_segments = math.ceil(total_duration / segment_duration)
         base_name = os.path.basename(audio_file).rsplit('.', 1)[0]
 
         self._emit_status(_("status_audio_duration", duration=total_duration, segments=num_segments))
@@ -4063,9 +4064,9 @@ class MainWorker(QObject):
                 if proc.returncode == 0 and os.path.exists(segment_file):
                     segment_files.append(segment_file)
                 else:
-                    self._emit_status(_("status_segment_slice_fail", idx=i+1))
+                    raise RuntimeError(_("status_segment_slice_fail", idx=i+1))
             except Exception as e:
-                self._emit_status(_("status_segment_slice_fail_detail", idx=i+1, error=e))
+                raise RuntimeError(_("status_segment_slice_fail_detail", idx=i+1, error=e)) from e
 
         return segment_files, total_duration
 
