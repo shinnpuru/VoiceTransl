@@ -786,7 +786,7 @@ class ConcurrentTranslationPool:
 
         if output_format == '双语LRC':
             left = os.path.join(output_dir, base_name + '.orig.lrc')
-            right = os.path.join(output_dir, base_name + '.zh.lrc')
+            right = os.path.join(output_dir, base_name + '.lrc')
             if os.path.exists(left) and os.path.exists(right):
                 merge_lrc_files([left, right],
                                 os.path.join(output_dir, base_name + '.combine.lrc'))
@@ -3916,12 +3916,13 @@ class MainWorker(QObject):
                     segment_srts_zh.append(zh_srt)
 
             if output_format in ('原文LRC', '双语LRC'):
-                orig_lrc = os.path.join(segment_dir, segment_name + '.lrc')
+                suffix = '.orig.lrc' if output_format == '双语LRC' else '.lrc'
+                orig_lrc = os.path.join(segment_dir, segment_name + suffix)
                 if os.path.exists(orig_lrc):
                     segment_lrcs_orig.append(orig_lrc)
 
             if output_format in ('目标LRC', '双语LRC'):
-                zh_lrc = os.path.join(segment_dir, segment_name + '.zh.lrc')
+                zh_lrc = os.path.join(segment_dir, segment_name + '.lrc')
                 if os.path.exists(zh_lrc):
                     segment_lrcs_zh.append(zh_lrc)
 
@@ -3948,13 +3949,13 @@ class MainWorker(QObject):
             merge_lrc_files(segment_lrcs_orig, final_lrc, duration)
 
         if output_format in ('目标LRC', '双语LRC'):
-            final_zh_lrc = os.path.join(final_output_dir, base_name + '.zh.lrc')
+            final_zh_lrc = os.path.join(final_output_dir, base_name + '.lrc')
             merge_lrc_files(segment_lrcs_zh, final_zh_lrc, duration)
 
         if output_format == '双语LRC':
             final_combine_lrc = os.path.join(final_output_dir, base_name + '.combine.lrc')
             left = os.path.join(final_output_dir, base_name + '.orig.lrc')
-            right = os.path.join(final_output_dir, base_name + '.zh.lrc')
+            right = os.path.join(final_output_dir, base_name + '.lrc')
             if os.path.exists(left) and os.path.exists(right):
                 merge_lrc_files([left, right], final_combine_lrc)
 
