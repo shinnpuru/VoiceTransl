@@ -133,11 +133,11 @@ class COpenAITokenPool:
 
         try:
             LOGGER.info(f"API URL: {token.domain}/chat/completions")
-            proxy_kwargs = build_httpx_sync_proxy_kwargs(proxy.addr if proxy else None)
+            proxy_kwargs = build_httpx_sync_proxy_kwargs(proxy.addr if proxy else None, token.domain)
             client = OpenAI(
                 api_key=token.token,
                 base_url=token.domain,
-                http_client=httpx.Client(**proxy_kwargs) if proxy_kwargs else None,
+                http_client=httpx.Client(trust_env=False, **proxy_kwargs),
             )
             # 可用性检测只关心"能否成功返回一个响应"，
             # 用极简 prompt + max_tokens=1 避免模型做无谓生成，大幅缩短检测耗时。

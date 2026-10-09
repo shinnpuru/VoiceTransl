@@ -69,6 +69,7 @@ from bilibili_dl.bilibili_dl.utils import send_request
 from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from pathlib import Path
 from input_utils import normalize_input, is_remote_input, native_model_path
+from network_utils import is_loopback_endpoint, model_request
 
 
 NO_TRANSCRIPTION = '不进行听写'
@@ -872,7 +873,7 @@ class ConcurrentTranslationPool:
                     self._shared_local_model_proc = proc
                     self._shared_local_model_port = port
             else:
-                self._msg_queue.put("status", _("status_local_model_start_fail"))
+                raise RuntimeError(_("status_local_model_start_fail"))
 
         # 创建线程事件
         self._thread_stop_event = threading.Event()
@@ -906,7 +907,7 @@ class ConcurrentTranslationPool:
                                 self._shared_local_model_proc = proc
                                 self._shared_local_model_port = port
                             else:
-                                self._msg_queue.put("status", _("status_local_model_start_fail"))
+                                raise RuntimeError(_("status_local_model_start_fail"))
 
                 # 执行翻译（在调用线程中同步执行）
                 tf_dict = {
@@ -1080,9 +1081,11 @@ class ConcurrentTranslationPool:
             start_wait = time()
 
             while not self._stop_event.is_set():
+                if proc.poll() is not None:
+                    raise RuntimeError(f'llama-server exited with code {proc.returncode}; see model log')
                 try:
-                    chat_resp = requests.post(
-                        f"http://localhost:{port}/v1/chat/completions",
+                    chat_resp = model_request(
+                        'POST', f"http://127.0.0.1:{port}/v1/chat/completions",
                         json={
                             "model": expected_model,
                             "messages": [{"role": "user", "content": "ping"}],
@@ -3376,7 +3379,8 @@ class MainWorker(QObject):
         # Update proxy configuration
         if 'proxy' not in cfg:
             cfg['proxy'] = {}
-        cfg['proxy']['enableProxy'] = bool(proxy_address)
+        local_endpoint = 'http://127.0.0.1:8989' if 'sakura' in translator else endpoint
+        cfg['proxy']['enableProxy'] = bool(proxy_address) and not is_loopback_endpoint(local_endpoint)
         if proxy_address:
             cfg['proxy']['proxies'] = [{'address': proxy_address}]
         else:
@@ -3433,23 +3437,19 @@ class MainWorker(QObject):
             self.finished.emit()
             return
 
-        base_url = base_url.rstrip('/') + '/v1/models'
+        base_url = base_url.rstrip('/')
+        if not base_url.endswith('/v1'):
+            base_url += '/v1'
+        base_url += '/models'
 
         self._emit_status(_("status_api_testing", url=base_url))
         try:
-            if proxy_address:
-                os.environ['HTTP_PROXY'] = proxy_address
-                os.environ['HTTPS_PROXY'] = proxy_address
-            else:
-                os.environ.pop('HTTP_PROXY', None)
-                os.environ.pop('HTTPS_PROXY', None)
-
             headers = {
                 'Authorization': f'Bearer {gpt_token}',
                 'Content-Type': 'application/json'
             }
 
-            resp = requests.get(base_url, headers=headers, timeout=20)
+            resp = model_request('GET', base_url, proxy=proxy_address, headers=headers, timeout=20)
             resp.raise_for_status()
 
             models = []

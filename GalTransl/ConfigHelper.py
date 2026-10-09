@@ -22,16 +22,17 @@ from yaml import safe_load
 from os import path, sep
 from enum import Enum
 from importlib.metadata import version
+from network_utils import is_loopback_endpoint
 
 
-def build_httpx_proxy_kwargs(proxy_addr: Optional[str]) -> dict:
+def build_httpx_proxy_kwargs(proxy_addr: Optional[str], endpoint=None) -> dict:
     """根据当前安装的 httpx 版本，返回与 `httpx.AsyncClient` 兼容的代理参数。
 
     - httpx < 0.26: 仅支持 `proxies=`
     - 0.26 <= httpx < 0.28: 同时支持 `proxy=` 与 `proxies=`
     - httpx >= 0.28: 仅支持 `proxy=`
     """
-    if not proxy_addr:
+    if not proxy_addr or (endpoint and is_loopback_endpoint(endpoint)):
         return {}
     try:
         params = inspect.signature(httpx.AsyncClient.__init__).parameters
@@ -45,9 +46,9 @@ def build_httpx_proxy_kwargs(proxy_addr: Optional[str]) -> dict:
     return {"mounts": {"all://": httpx.AsyncHTTPTransport(proxy=proxy_addr)}}
 
 
-def build_httpx_sync_proxy_kwargs(proxy_addr: Optional[str]) -> dict:
+def build_httpx_sync_proxy_kwargs(proxy_addr: Optional[str], endpoint=None) -> dict:
     """同 `build_httpx_proxy_kwargs`，但用于 `httpx.Client`。"""
-    if not proxy_addr:
+    if not proxy_addr or (endpoint and is_loopback_endpoint(endpoint)):
         return {}
     try:
         params = inspect.signature(httpx.Client.__init__).parameters

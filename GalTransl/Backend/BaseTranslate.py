@@ -227,9 +227,9 @@ class BaseTranslate:
             proxy_addr = None
 
         trust_env = False  # 不使用系统代理
-        proxy_kwargs = build_httpx_proxy_kwargs(proxy_addr)
         self.client_list = []
         for token in self.tokenProvider.get_available_token():
+            proxy_kwargs = build_httpx_proxy_kwargs(proxy_addr, token.domain)
             client = AsyncOpenAI(
                 api_key=token.token,
                 base_url=token.domain,

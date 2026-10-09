@@ -96,7 +96,7 @@ class CSakuraTranslate(BaseTranslate):
         if self.proxyProvider:
             from GalTransl.ConfigHelper import build_httpx_proxy_kwargs
             self.proxy = self.proxyProvider.getProxy()
-            proxy_kwargs = build_httpx_proxy_kwargs(self.proxy.addr if self.proxy else None)
+            proxy_kwargs = build_httpx_proxy_kwargs(self.proxy.addr if self.proxy else None, endpoint)
             client = httpx.AsyncClient(trust_env=False, **proxy_kwargs)
         else:
             client = httpx.AsyncClient(trust_env=False)
