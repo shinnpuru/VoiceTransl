@@ -4,6 +4,10 @@ _current_lang = "zh"
 
 TRANSLATIONS = {
     "zh": {
+        "asr_length_label": "听写句子长度",
+        "asr_length_default": "沿用参数文件",
+        "asr_length_chars": "最多 {value} 字符",
+        "asr_length_tip": "设置 CrispASR 每句字幕的字符上限（--max-len）。0 沿用参数文件；实际切分由引擎和对齐结果决定，不会限制整段识别文本。",
         "status_cleaning_done": "[INFO] 缓存清理完成，输出文件已保留。",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
@@ -353,6 +357,10 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [进程{idx}] 翻译进程已结束 (exit={retcode})",
     },
     "en": {
+        "asr_length_label": "Subtitle length",
+        "asr_length_default": "Use parameter file",
+        "asr_length_chars": "Up to {value} chars",
+        "asr_length_tip": "CrispASR subtitle character limit (--max-len). 0 keeps the parameter file setting. Splitting depends on the engine and alignment; recognition text is not truncated.",
         "status_cleaning_done": "[INFO] Cache cleared; output files preserved.",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
@@ -704,6 +712,10 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [Worker {idx}] Translation process ended (exit={retcode})",
     },
     "ja": {
+        "asr_length_label": "字幕の長さ",
+        "asr_length_default": "パラメータに従う",
+        "asr_length_chars": "最大 {value} 文字",
+        "asr_length_tip": "CrispASR の字幕文字数上限（--max-len）。0 はパラメータファイルに従います。分割はエンジンとアライメントに依存し、認識テキスト全体は切り捨てません。",
         "status_cleaning_done": "[INFO] キャッシュを削除しました。出力ファイルは保持されています。",
         # === Window & Tray ===
         "window_title": "VoiceTransl",

@@ -84,6 +84,23 @@ class CrispASRWorkflowTest(unittest.TestCase):
         )
         self.assertEqual(command[command.index("--backend") + 1], "qwen3-1.7b")
 
+    def test_length_slider_overrides_all_aliases_without_truncating_generation(self):
+        template = PARAM_FILE.read_text(encoding='utf-8') + ' -ml 90 --max-len=80 --max-new-tokens 512'
+        command = _build_crispasr_command(
+            ROOT / 'input.wav', ROOT / 'transcript', MODEL_FILE, 'ja', template,
+            aligner_file=ALIGNER_FILE, max_chars=30,
+        )
+        self.assertEqual(command.count('--max-len'), 1)
+        self.assertEqual(command[command.index('--max-len') + 1], '30')
+        self.assertNotIn('-ml', command)
+        self.assertNotIn('--max-len=80', command)
+        self.assertEqual([command[i + 1] for i, arg in enumerate(command) if arg == '--max-new-tokens'], ['96', '512'])
+        default = _build_crispasr_command(
+            ROOT / 'input.wav', ROOT / 'transcript', MODEL_FILE, 'ja', template,
+            aligner_file=ALIGNER_FILE, max_chars=0,
+        )
+        self.assertIn('--max-len=80', default)
+
     @unittest.skipUnless(
         all(path.is_file() for path in (AUDIO_FIXTURE, MODEL_FILE, ALIGNER_FILE, EXECUTABLE)),
         "local CrispASR binaries, models, and MP3 fixture are required",

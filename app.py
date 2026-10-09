@@ -168,7 +168,7 @@ def _set_command_option(command, option_names, preferred_option, value):
 
 def _build_crispasr_command(
     input_file, output_file, model_file, language, param_crispasr,
-    aligner_file=None, backend=None,
+    aligner_file=None, backend=None, max_chars=None,
 ):
     """按 param.txt 模板替换占位符，生成与旧 Whisper 相同风格的启动参数。"""
     crispasr_dir = Path('crispasr').resolve()
@@ -212,6 +212,19 @@ def _build_crispasr_command(
         raise ValueError('CrispASR param.txt is empty')
     _set_command_option(command, ('--backend',), '--backend', selected_backend)
     _set_command_option(command, ('--aligner-model', '-am'), '--aligner-model', str(aligner_path.resolve()))
+    if max_chars is not None and int(max_chars) > 0:
+        # Remove every spelling so a later template argument cannot override the slider.
+        filtered = []
+        skip_value = False
+        for token in command:
+            if skip_value:
+                skip_value = False
+                continue
+            if token in ('--max-len', '-ml'):
+                skip_value = True
+            elif not token.startswith(('--max-len=', '-ml=')):
+                filtered.append(token)
+        command = filtered + ['--max-len', str(int(max_chars))]
     # Keep auxiliary downloads out of a potentially non-ASCII Windows profile.
     if '--cache-dir' not in command and not any(arg.startswith('--cache-dir=') for arg in command):
         cache_dir = crispasr_dir / 'cache'
@@ -1319,6 +1332,7 @@ class MainWindow(QMainWindow):
             'online_translator': self.online_translator_group.currentText(),
             'local_translator': self.local_translator_group.currentText(),
             'language': language,
+            'asr_max_chars': self.asr_length_slider.value(),
             'gpt_address': gpt_address,
             'gpt_model': gpt_model,
             'sakura_file': sakura_file,
@@ -1383,7 +1397,7 @@ class MainWindow(QMainWindow):
                 widget.editingFinished.connect(self._schedule_auto_save)
             elif isinstance(widget, QComboBox):
                 widget.currentTextChanged.connect(self._on_config_changed)
-            elif isinstance(widget, QSpinBox):
+            elif isinstance(widget, (QSpinBox, QSlider)):
                 widget.valueChanged.connect(self._on_config_changed)
             elif isinstance(widget, QCheckBox):
                 widget.stateChanged.connect(self._on_config_changed)
@@ -1737,6 +1751,8 @@ class MainWindow(QMainWindow):
 
     def update_processing_controls(self):
         """Keep language controls aligned with the actions selected on the input tab."""
+        if hasattr(self, 'asr_length_slider'):
+            self.asr_length_slider.setEnabled(self.enable_transcription_checkbox.isChecked())
         if hasattr(self, 'transcription_lang'):
             language_required = (
                 getattr(self, 'enable_transcription_checkbox', None) is not None
@@ -2021,6 +2037,7 @@ class MainWindow(QMainWindow):
             self.enable_transcription_checkbox.setChecked(bool(enable_transcription))
             self.enable_translation_checkbox.setChecked(bool(enable_translation))
             saved_language = gui_settings.get('language', 'ja')
+            self.asr_length_slider.setValue(int(gui_settings.get('asr_max_chars', 0)))
             language_index = self.transcription_lang.findData(saved_language)
             if language_index >= 0:
                 self.transcription_lang.setCurrentIndex(language_index)
@@ -2554,6 +2571,7 @@ class MainWindow(QMainWindow):
 
         for widget, translation_key in self._dynamic_i18n_labels:
             widget.setText(_(translation_key))
+        self._update_asr_length_label()
         for index, translation_key in enumerate(self._main_tab_i18n_keys):
             self.main_tab_bar.setTabText(index, _(translation_key))
         for source_button, mirror_button in self._button_mirrors:
@@ -2585,6 +2603,11 @@ class MainWindow(QMainWindow):
                 QSystemTrayIcon.Information,
                 3000
             )
+
+    def _update_asr_length_label(self, *args):
+        value = self.asr_length_slider.value()
+        self.asr_length_value.setText(_("asr_length_chars", value=value) if value else _("asr_length_default"))
+        self.asr_length_slider.setToolTip(_("asr_length_tip"))
 
     def initInputOutputTab(self):
         self.input_output_tab = Widget("Home", self)
@@ -2631,6 +2654,21 @@ class MainWindow(QMainWindow):
         transcription_layout.addWidget(self.segment_duration_spin)
         transcription_layout.addStretch(1)
         self.input_output_layout.addLayout(transcription_layout)
+
+        length_layout = QHBoxLayout()
+        length_label = BodyLabel(_("asr_length_label"))
+        self._dynamic_i18n_labels.append((length_label, 'asr_length_label'))
+        length_layout.addWidget(length_label)
+        self.asr_length_slider = QSlider(Qt.Horizontal)
+        self.asr_length_slider.setRange(0, 120)
+        self.asr_length_slider.setPageStep(10)
+        self.asr_length_value = BodyLabel()
+        self.asr_length_value.setMinimumWidth(110)
+        self.asr_length_slider.valueChanged.connect(self._update_asr_length_label)
+        self._update_asr_length_label()
+        length_layout.addWidget(self.asr_length_slider, 1)
+        length_layout.addWidget(self.asr_length_value)
+        self.input_output_layout.addLayout(length_layout)
 
         # Translation settings stay together.
         self.io_translation_group_label = SubtitleLabel(_("io_translation_group_title"))
@@ -3594,6 +3632,7 @@ class MainWorker(QObject):
                 command = _build_crispasr_command(
                     staged_audio, output_base, model_file, language,
                     param_crispasr, aligner_file=aligner_file, backend=backend,
+                    max_chars=self.master.asr_length_slider.value(),
                 )
                 self.msg_queue.put("detail", _format_command(command))
                 proc = self._start_process(command, label='CrispASR test')
@@ -3917,6 +3956,7 @@ class MainWorker(QObject):
     def _process_single_audio(
         self, wav_file, asr_model_file, aligner_file, asr_backend, language,
         param_crispasr, json_path, start_named_proc, stop_named_proc,
+        max_chars=None,
     ):
         """使用 CrispASR + forced aligner 处理单个音频文件。"""
         base_path = wav_file[:-4]  # 去掉 .wav
@@ -3932,6 +3972,7 @@ class MainWorker(QObject):
             command = _build_crispasr_command(
                 staged_input, output_base, asr_model_file, language, param_crispasr,
                 aligner_file=aligner_file, backend=asr_backend,
+                max_chars=max_chars,
             )
             self.msg_queue.put("detail", _format_command(command))
             asr_proc, _unused = start_named_proc('crispasr', command)
@@ -4099,6 +4140,7 @@ class MainWorker(QObject):
         gpt_dict = self.master.gpt_dict.toPlainText()
         after_dict = self.master.after_dict.toPlainText()
         param_crispasr = self.master.param_crispasr.toPlainText()
+        asr_max_chars = self.master.asr_length_slider.value()
         param_llama = self.master.param_llama.toPlainText()
         selected_output_format = self.master.selected_output_format()
         output_dir = self.master.output_dir_edit.text().strip() or self.master.default_output_dir()
@@ -4413,6 +4455,7 @@ class MainWorker(QObject):
                             segment_json,
                             start_named_proc,
                             stop_named_proc,
+                            max_chars=asr_max_chars,
                         )
 
                         if output_format in ('原文LRC', '双语LRC'):
@@ -4465,6 +4508,7 @@ class MainWorker(QObject):
                         json_path,
                         start_named_proc,
                         stop_named_proc,
+                        max_chars=asr_max_chars,
                     )
 
                     # 生成原文 SRT/LRC 输出
