@@ -91,7 +91,7 @@ class CrispASRWorkflowTest(unittest.TestCase):
             aligner_file=ALIGNER_FILE, max_chars=30,
         )
         self.assertEqual(command.count('--max-len'), 1)
-        self.assertEqual(command[command.index('--max-len') + 1], '30')
+        self.assertEqual(command[command.index('--max-len') + 1], '90')
         self.assertNotIn('-ml', command)
         self.assertNotIn('--max-len=80', command)
         self.assertEqual([command[i + 1] for i, arg in enumerate(command) if arg == '--max-new-tokens'], ['96', '512'])

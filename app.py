@@ -224,7 +224,9 @@ def _build_crispasr_command(
                 skip_value = True
             elif not token.startswith(('--max-len=', '-ml=')):
                 filtered.append(token)
-        command = filtered + ['--max-len', str(int(max_chars))]
+        # CrispASR v0.8.28 packs UTF-8 bytes, despite its CLI help saying characters.
+        bytes_per_char = 3 if language in ('ja', 'zh', 'ko') else 2 if language == 'ru' else 1
+        command = filtered + ['--max-len', str(int(max_chars) * bytes_per_char)]
     # Keep auxiliary downloads out of a potentially non-ASCII Windows profile.
     if '--cache-dir' not in command and not any(arg.startswith('--cache-dir=') for arg in command):
         cache_dir = crispasr_dir / 'cache'

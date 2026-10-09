@@ -6,8 +6,8 @@ TRANSLATIONS = {
     "zh": {
         "asr_length_label": "听写句子长度",
         "asr_length_default": "沿用参数文件",
-        "asr_length_chars": "最多 {value} 字符",
-        "asr_length_tip": "设置 CrispASR 每句字幕的字符上限（--max-len）。0 沿用参数文件；实际切分由引擎和对齐结果决定，不会限制整段识别文本。",
+        "asr_length_chars": "约 {value} 字",
+        "asr_length_tip": "设置每句字幕的长度。0 沿用参数文件。CrispASR 的 --max-len 按 UTF-8 字节计数，程序按听写语言换算（日/中/韩 ×3，俄语 ×2）；混合文字和标点会影响实际字数。不会截断整段识别文本。",
         "status_cleaning_done": "[INFO] 缓存清理完成，输出文件已保留。",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
@@ -359,8 +359,8 @@ TRANSLATIONS = {
     "en": {
         "asr_length_label": "Subtitle length",
         "asr_length_default": "Use parameter file",
-        "asr_length_chars": "Up to {value} chars",
-        "asr_length_tip": "CrispASR subtitle character limit (--max-len). 0 keeps the parameter file setting. Splitting depends on the engine and alignment; recognition text is not truncated.",
+        "asr_length_chars": "About {value} chars",
+        "asr_length_tip": "Subtitle length; 0 keeps the parameter file. CrispASR --max-len counts UTF-8 bytes, converted by language (JA/ZH/KO ×3, RU ×2). Mixed scripts and punctuation affect actual length. Recognition text is not truncated.",
         "status_cleaning_done": "[INFO] Cache cleared; output files preserved.",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
@@ -714,8 +714,8 @@ TRANSLATIONS = {
     "ja": {
         "asr_length_label": "字幕の長さ",
         "asr_length_default": "パラメータに従う",
-        "asr_length_chars": "最大 {value} 文字",
-        "asr_length_tip": "CrispASR の字幕文字数上限（--max-len）。0 はパラメータファイルに従います。分割はエンジンとアライメントに依存し、認識テキスト全体は切り捨てません。",
+        "asr_length_chars": "約 {value} 文字",
+        "asr_length_tip": "字幕の長さ。0 はパラメータファイルに従います。--max-len は UTF-8 バイト単位のため、言語に応じて換算します（日/中/韓 ×3、露 ×2）。混在文字や句読点により実際の文字数は変わります。認識テキスト全体は切り捨てません。",
         "status_cleaning_done": "[INFO] キャッシュを削除しました。出力ファイルは保持されています。",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
