@@ -68,6 +68,7 @@ from bilibili_dl.bilibili_dl.downloader import download
 from bilibili_dl.bilibili_dl.utils import send_request
 from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from pathlib import Path
+from input_utils import normalize_input, is_remote_input, native_model_path
 
 
 NO_TRANSCRIPTION = '不进行听写'
@@ -210,6 +211,22 @@ def _build_crispasr_command(
         raise ValueError('CrispASR param.txt is empty')
     _set_command_option(command, ('--backend',), '--backend', selected_backend)
     _set_command_option(command, ('--aligner-model', '-am'), '--aligner-model', str(aligner_path.resolve()))
+    # Keep auxiliary downloads out of a potentially non-ASCII Windows profile.
+    if '--cache-dir' not in command and not any(arg.startswith('--cache-dir=') for arg in command):
+        cache_dir = crispasr_dir / 'cache'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        command.extend(['--cache-dir', str(cache_dir)])
+    path_options = {'--model', '-m', '--aligner-model', '-am', '--file', '-f',
+                    '--output-file', '-of', '--cache-dir', '--vad-model', '-vm'}
+    command[0] = native_model_path(command[0])
+    for index in range(1, len(command)):
+        if command[index - 1] in path_options:
+            if command[index] not in ('auto', 'silero', 'firered'):
+                command[index] = native_model_path(command[index])
+        elif '=' in command[index]:
+            option, value = command[index].split('=', 1)
+            if option in path_options and value not in ('auto', 'silero', 'firered'):
+                command[index] = option + '=' + native_model_path(value)
     return command
 
 
@@ -3486,10 +3503,14 @@ class MainWorker(QObject):
             self._emit_status(_(
                 "status_offline_asr_test_starting", model=model_file
             ))
-            with tempfile.TemporaryDirectory(prefix='voicetransl_asr_test_') as temp_dir:
+            test_root = Path('project/cache/asr_tests')
+            test_root.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix='test_', dir=test_root) as temp_dir:
+                staged_audio = Path(temp_dir) / ('input' + audio_file.suffix)
+                shutil.copyfile(audio_file, staged_audio)
                 output_base = Path(temp_dir) / 'transcript'
                 command = _build_crispasr_command(
-                    audio_file, output_base, model_file, language,
+                    staged_audio, output_base, model_file, language,
                     param_crispasr, aligner_file=aligner_file, backend=backend,
                 )
                 self.msg_queue.put("detail", _format_command(command))
@@ -4042,7 +4063,7 @@ class MainWorker(QObject):
         self._emit_status(_("status_current_input", files=input_files))
 
         if input_files:
-            input_files = input_files.split('\n')
+            input_files = [normalize_input(item) for item in input_files.splitlines() if item.strip()]
         else:
             input_files = []
 
@@ -4145,6 +4166,8 @@ class MainWorker(QObject):
                         break
 
                 else:
+                    if not is_remote_input(input_file):
+                        raise FileNotFoundError(_("status_file_not_exist", file=input_file))
                     ydl_outtmpl = os.path.join(output_dir, 'YoutubeDL_%(title)s_%(id)s.%(ext)s')
                     if proxy_address:
                         ydl_ctx = YoutubeDL({'proxy': proxy_address, 'outtmpl': ydl_outtmpl})

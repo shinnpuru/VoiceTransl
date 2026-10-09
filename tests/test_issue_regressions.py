@@ -13,6 +13,39 @@ from app import ConcurrentTranslationPool, MainWorker, UIMessageQueue
 sys.stdout, sys.stderr = _stdout, _stderr
 from prompt2srt import make_lrc
 from srt2prompt import make_prompt
+from input_utils import normalize_input, is_remote_input, native_model_path
+
+
+class InputTests(unittest.TestCase):
+    def test_copied_paths_file_urls_and_web_urls(self):
+        self.assertEqual(normalize_input('  "C:/视频/test.mp4"  '), 'C:/视频/test.mp4')
+        self.assertEqual(normalize_input('file:///C:/videos/a%20b.mp4').replace('\\', '/'), 'C:/videos/a b.mp4')
+        self.assertTrue(is_remote_input('https://example.org/a.mp4'))
+        self.assertFalse(is_remote_input('C:/missing.mp4'))
+        self.assertFalse(is_remote_input('file:///C:/a.mp4'))
+
+    def test_subtitle_encodings_preserve_content(self):
+        text = '1\n00:00:01,000 --> 00:00:02,000\n中文字幕\n\n'
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / '字幕.srt'
+            for encoding in ('utf-8', 'utf-8-sig', 'utf-16', 'gb18030'):
+                source.write_bytes(text.encode(encoding))
+                self.assertEqual(make_prompt(str(source))[0]['message'], '中文字幕')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows runtime path compatibility')
+    def test_native_path_uses_existing_alias_or_clear_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / '中文目录'
+            folder.mkdir()
+            path = folder / 'input.wav'
+            path.write_bytes(b'audio')
+            try:
+                result = native_model_path(path)
+            except ValueError as exc:
+                self.assertIn('ASCII directory', str(exc))
+            else:
+                self.assertTrue(result.isascii())
+                self.assertEqual(Path(result).read_bytes(), b'audio')
 
 
 class SubtitleOutputTests(unittest.TestCase):
