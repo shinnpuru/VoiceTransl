@@ -15,6 +15,7 @@ from GalTransl.CSentense import CSentense, CTransList
 from GalTransl.Cache import save_transCache_to_json
 from GalTransl.Dictionary import CGptDict
 from GalTransl.Utils import extract_code_blocks, fix_quotes
+from GalTransl.JsonRepair import load_translation_object
 from GalTransl.Backend.Prompts import (
     FORGAL_JSON_SYSTEM_PROMPT,
     FORGAL_JSON_TRANS_PROMPT,
@@ -337,7 +338,7 @@ class ForGalJsonTranslate(BaseTranslate):
             return False, f"jsonline缺少sig前缀：{line}"
         line_sig, line = line.split("|", 1)
         try:
-            line_json = json.loads(line)
+            line_json = load_translation_object(line)
         except Exception:
             return False, f"json无法解析行：{line}"
 
