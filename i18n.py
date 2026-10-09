@@ -4,6 +4,12 @@ _current_lang = "zh"
 
 TRANSLATIONS = {
     "zh": {
+        "thinking_label": "翻译模型推理模式",
+        "thinking_default": "跟随模型默认",
+        "thinking_siliconflow": "关闭推理 — 硅基流动 / 通义千问",
+        "thinking_deepseek": "关闭推理 — DeepSeek",
+        "thinking_local": "关闭推理 — 本地 llama.cpp / vLLM",
+        "thinking_tip": "按服务商选择关闭方式；仅支持可切换推理的模型。自定义中转接口请选择其支持的协议。不影响 Sakura 专用翻译器。",
         "asr_length_label": "听写句子长度",
         "asr_length_default": "沿用参数文件",
         "asr_length_chars": "约 {value} 字",
@@ -357,6 +363,12 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [进程{idx}] 翻译进程已结束 (exit={retcode})",
     },
     "en": {
+        "thinking_label": "Translation model reasoning",
+        "thinking_default": "Model default",
+        "thinking_siliconflow": "Disable — SiliconFlow / Qwen",
+        "thinking_deepseek": "Disable — DeepSeek",
+        "thinking_local": "Disable — local llama.cpp / vLLM",
+        "thinking_tip": "Choose the protocol supported by your provider. Requires a model with switchable reasoning. Does not affect the dedicated Sakura backend.",
         "asr_length_label": "Subtitle length",
         "asr_length_default": "Use parameter file",
         "asr_length_chars": "About {value} chars",
@@ -712,6 +724,12 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [Worker {idx}] Translation process ended (exit={retcode})",
     },
     "ja": {
+        "thinking_label": "翻訳モデルの推論モード",
+        "thinking_default": "モデルの既定値",
+        "thinking_siliconflow": "無効 — SiliconFlow / Qwen",
+        "thinking_deepseek": "無効 — DeepSeek",
+        "thinking_local": "無効 — ローカル llama.cpp / vLLM",
+        "thinking_tip": "サービスが対応する方式を選択してください。推論を切り替えられるモデルのみ対応。Sakura 専用翻訳器には影響しません。",
         "asr_length_label": "字幕の長さ",
         "asr_length_default": "パラメータに従う",
         "asr_length_chars": "約 {value} 文字",

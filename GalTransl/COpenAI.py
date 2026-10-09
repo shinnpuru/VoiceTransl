@@ -62,6 +62,7 @@ class COpenAITokenPool:
             "rewriteModelName", ""
         )
         self.stream = config.getBackendConfigSection(section_name).get("stream", False)
+        self.thinking_mode = config.getBackendConfigSection(section_name).get('thinkingMode', 'default')
         self.timeout = config.getBackendConfigSection(section_name).get(
             "apiTimeout", 60
         )
@@ -149,6 +150,10 @@ class COpenAITokenPool:
                 max_tokens=1,
             )
             try:
+                from GalTransl.Thinking import thinking_body
+                body = thinking_body(getattr(self, 'thinking_mode', 'default'))
+                if body:
+                    create_kwargs['extra_body'] = body
                 response = client.chat.completions.create(**create_kwargs)
             except TypeError:
                 # 少数兼容实现不接受 max_tokens 参数，回退一次

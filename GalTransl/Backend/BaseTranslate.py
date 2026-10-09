@@ -22,6 +22,7 @@ import random
 import time
 from contextlib import suppress
 from GalTransl.TerminalOutput import should_print_translation_logs
+from GalTransl.Thinking import thinking_body
 
 
 _GLOBAL_RPM_LOCK = Lock()
@@ -174,6 +175,7 @@ class BaseTranslate:
 
     def init_chatbot(self, eng_type, config: CProjectConfig):
         section_name = "OpenAI-Compatible"
+        self.thinking_mode = config.getBackendConfigSection(section_name).get('thinkingMode', 'default')
 
         self.api_timeout = config.getBackendConfigSection(section_name).get(
             "apiTimeout", 60
@@ -639,6 +641,7 @@ class BaseTranslate:
                         timeout=self.api_timeout,
                         top_p=top_p,
                         reasoning_effort=reasoning_effort,
+                        **({'extra_body': thinking_body(self.thinking_mode)} if getattr(self, 'thinking_mode', 'default') != 'default' else {}),
                     )
                 )
 
