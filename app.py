@@ -636,7 +636,8 @@ class ConcurrentTranslationPool:
 
     @staticmethod
     def _translate_worker_thread(task_queue, result_queue, msg_queue, stop_event,
-                                 project_dir, base_config_path, engine, worker_idx):
+                                 project_dir, base_config_path, engine, worker_idx,
+                                 active_procs, procs_lock):
         """工作线程函数：从队列取任务并执行翻译"""
         while not stop_event.is_set():
             try:
@@ -657,7 +658,8 @@ class ConcurrentTranslationPool:
             # 执行翻译
             try:
                 ConcurrentTranslationPool._translate_one_impl(
-                    tf_dict, worker_idx, project_dir, base_config_path, engine, msg_queue)
+                    tf_dict, worker_idx, project_dir, base_config_path, engine,
+                    msg_queue, stop_event, active_procs, procs_lock)
                 result_queue.put(('success', worker_idx))
             except Exception as e:
                 result_queue.put(('error', worker_idx, str(e)))
@@ -666,7 +668,7 @@ class ConcurrentTranslationPool:
 
     @staticmethod
     def _translate_one_impl(tf_dict, worker_idx, project_dir, base_config_path,
-                            engine, msg_queue):
+                            engine, msg_queue, stop_event, active_procs, procs_lock):
         """在线程中执行单个文件的翻译"""
         base_path = tf_dict['base_path']
         json_src = tf_dict['json_src']
@@ -713,27 +715,38 @@ class ConcurrentTranslationPool:
                 creationflags=creationflags, bufsize=1,
                 env=proc_env,
             )
+            with procs_lock:
+                active_procs.append(proc)
+            # Close the tiny race where cancellation happened after Popen but
+            # before this process was registered in active_procs.
+            if stop_event.is_set() and proc.poll() is None:
+                proc.terminate()
 
-            # 翻译日志解析器：将 GalTransl 三行格式转换为 JSON
-            _trans_parser = _TranslationLogParser()
+            try:
+                # 翻译日志解析器：将 GalTransl 三行格式转换为 JSON
+                _trans_parser = _TranslationLogParser()
 
-            for line in iter(proc.stdout.readline, ''):
-                # 清除 ANSI 转义序列和控制字符
-                cleaned = _clean_control_chars(_strip_ansi(line.rstrip('\n\r')))
-                if not cleaned:
-                    continue
-                # 通过解析器转换翻译输出格式（JSON 化），逐行写入日志和发送到 GUI
-                for output_line in _trans_parser.feed(cleaned):
+                for line in iter(proc.stdout.readline, ''):
+                    # 清除 ANSI 转义序列和控制字符
+                    cleaned = _clean_control_chars(_strip_ansi(line.rstrip('\n\r')))
+                    if not cleaned:
+                        continue
+                    # 通过解析器转换翻译输出格式（JSON 化），逐行写入日志和发送到 GUI
+                    for output_line in _trans_parser.feed(cleaned):
+                        if output_line.strip():
+                            send_status(output_line)
+
+                # 刷新解析器缓冲区中残留的行
+                for output_line in _trans_parser.flush():
                     if output_line.strip():
                         send_status(output_line)
 
-            # 刷新解析器缓冲区中残留的行
-            for output_line in _trans_parser.flush():
-                if output_line.strip():
-                    send_status(output_line)
-
-            proc.stdout.close()
-            retcode = proc.wait()
+                proc.stdout.close()
+                retcode = proc.wait()
+            finally:
+                with procs_lock:
+                    if proc in active_procs:
+                        active_procs.remove(proc)
 
             # 短暂等待，确保状态队列中的日志已排空发送到 GUI
             send_status(_("status_translate_proc_ended", idx=worker_idx, retcode=retcode))
@@ -790,6 +803,11 @@ class ConcurrentTranslationPool:
         json_name = os.path.basename(json_src)
         gt_output_json = os.path.join(workspace, 'gt_output', json_name)
         base_name = os.path.basename(base_path)
+        if not os.path.isfile(gt_output_json) or os.path.getsize(gt_output_json) == 0:
+            raise RuntimeError(
+                f'Translator produced no subtitle data for {base_name}. '
+                f'Inspect {workspace}/GalTransl.log and {workspace}/error.log'
+            )
 
         if output_format in ('目标SRT', '双语SRT'):
             zh_srt_output = os.path.join(output_dir, base_name + '.tg.srt')
@@ -813,10 +831,7 @@ class ConcurrentTranslationPool:
                 merge_lrc_files([left, right],
                                 os.path.join(output_dir, base_name + '.combine.lrc'))
 
-        if output_format not in ('双语SRT', '原文SRT'):
-            left = os.path.join(output_dir, base_name + '.srt')
-            if os.path.exists(left):
-                os.remove(left)
+        # Preserve original subtitles, including user-supplied SRT files.
 
     def __init__(self, project_dir, base_config_path, max_concurrent, stop_event,
                  msg_queue, local_model_config=None):
@@ -881,10 +896,10 @@ class ConcurrentTranslationPool:
         # 并发模式：启动多个工作线程
         for i in range(self._max_concurrent):
             t = threading.Thread(
-                target=ConcurrentTranslationPool._translate_worker_thread,
-                args=(self._task_queue, self._result_queue, self._msg_queue,
-                      self._thread_stop_event, self._project_dir, self._base_config_path,
-                      engine, i),
+                    target=ConcurrentTranslationPool._translate_worker_thread,
+                    args=(self._task_queue, self._result_queue, self._msg_queue,
+                          self._thread_stop_event, self._project_dir, self._base_config_path,
+                          engine, i, self._active_translate_procs, self._procs_lock),
                 daemon=True
             )
             self._active_threads.append(t)
@@ -920,7 +935,8 @@ class ConcurrentTranslationPool:
                 try:
                     ConcurrentTranslationPool._translate_one_impl(
                         tf_dict, 0, self._project_dir, self._base_config_path,
-                        self._engine, self._msg_queue)
+                        self._engine, self._msg_queue, self._stop_event,
+                        self._active_translate_procs, self._procs_lock)
                 except Exception as e:
                     with self._error_lock:
                         self._error_count += 1
@@ -958,14 +974,19 @@ class ConcurrentTranslationPool:
                     raise RuntimeError('Translation workers stopped before completing the batch')
                 self._task_queue.all_tasks_done.wait(0.2)
 
-    def wait_all(self, timeout=600):
+    def wait_all(self, timeout=None):
         """等待所有工作线程结束"""
         if self._serial_mode:
             return
 
+        if timeout is None:
+            self.wait_pending()
+
         # 等待所有线程结束
         for t in self._active_threads:
-            t.join(timeout=timeout / len(self._active_threads) if self._active_threads else timeout)
+            t.join(timeout=timeout / len(self._active_threads) if timeout is not None else None)
+            if t.is_alive():
+                raise TimeoutError('Translation is still running; outputs are not ready')
 
         # 处理结果队列中的错误
         while True:
@@ -982,20 +1003,10 @@ class ConcurrentTranslationPool:
 
     def stop(self):
         """停止所有工作线程和子进程"""
-        # 设置停止事件
-        self._stop_event.set()
-        if hasattr(self, '_thread_stop_event'):
-            self._thread_stop_event.set()
+        self.request_stop()
 
-        # 终止所有在途的 GalTransl 翻译子进程
+        # 等待所有在途的 GalTransl 翻译子进程退出。
         with self._procs_lock:
-            for proc in self._active_translate_procs:
-                try:
-                    if proc.poll() is None:
-                        proc.terminate()
-                except Exception:
-                    pass
-            # 等待子进程终止
             for proc in self._active_translate_procs:
                 try:
                     proc.wait(timeout=3)
@@ -1010,6 +1021,7 @@ class ConcurrentTranslationPool:
         while True:
             try:
                 self._task_queue.get_nowait()
+                self._task_queue.task_done()
             except queue.Empty:
                 break
 
@@ -1025,6 +1037,30 @@ class ConcurrentTranslationPool:
 
         # 排空消息队列中所有残留
         self._msg_queue.drain_all(timeout=2.0)
+
+    def request_stop(self):
+        """发出非阻塞停止请求，让工作线程自行完成清理并退出。"""
+        self._stop_event.set()
+        if hasattr(self, '_thread_stop_event'):
+            self._thread_stop_event.set()
+
+        # 只发出终止信号；等待和强制清理由 stop() 完成。
+        with self._procs_lock:
+            for proc in self._active_translate_procs:
+                try:
+                    if proc.poll() is None:
+                        proc.terminate()
+                except Exception:
+                    pass
+
+        with self._local_model_lock:
+            local_proc = self._shared_local_model_proc
+        if local_proc:
+            try:
+                if local_proc.poll() is None:
+                    local_proc.terminate()
+            except Exception:
+                pass
 
     def _stop_shared_local_model(self):
         """停止共享的本地模型"""
@@ -1190,6 +1226,8 @@ class MainWindow(QMainWindow):
         self.msg_queue = UIMessageQueue(LOG_PATH)
         self.thread = None
         self.worker = None
+        self._active_task_button = None
+        self._cancel_requested = False
         self._suppress_auto_save = True
         self._button_mirrors = []
         self._dynamic_i18n_labels = []
@@ -1884,23 +1922,27 @@ class MainWindow(QMainWindow):
                 self.sakura_file.setCurrentText(current_model)
 
     def cancel_task(self):
+        if not self._task_is_running():
+            return
+
+        if self._cancel_requested:
+            return
+
+        self._cancel_requested = True
         self._emit_status(_("status_cancelling"))
+        self._set_action_button_enabled(self.cancel_button, False)
         try:
             if self.worker:
-                self.worker.stop()
+                self.worker.request_stop()
         except Exception as e:
             self._emit_status(_("status_cancel_worker_error", error=e))
 
         try:
             if self.thread and self.thread.isRunning():
+                self.thread.requestInterruption()
                 self.thread.quit()
-                if not self.thread.wait(2000):
-                    self.thread.terminate()
-                    self.thread.wait(2000)
         except Exception as e:
             self._emit_status(_("status_cancel_thread_error", error=e))
-
-        self._emit_status(_("status_cancel_done"))
 
     def _migrate_config_txt(self):
         """从旧 config.txt 迁移到 gui_settings.yaml + .env，返回 gui_settings 字典"""
@@ -2680,6 +2722,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.run_button)
 
         self.cancel_button = QPushButton(_("io_cancel_btn"))
+        self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_task)
         button_layout.addWidget(self.cancel_button)
 
@@ -3062,53 +3105,99 @@ class MainWindow(QMainWindow):
 
         self.addSubInterface(self.summarize_tab, FluentIcon.DEVELOPER_TOOLS, _("tab_summarize"), NavigationItemPosition.TOP)
 
+    def _task_is_running(self):
+        thread = self.thread
+        if thread is None:
+            return False
+        try:
+            return thread.isRunning()
+        except RuntimeError:
+            # The C++ QThread may already have been released by deleteLater().
+            self.thread = None
+            self.worker = None
+            return False
+
+    def _restore_task_button(self, source_button):
+        if source_button is None:
+            return
+
+        enabled = True
+        if source_button is getattr(self, 'test_offline_translation_button', None):
+            enabled = self.translator_mode.currentData() == 'local'
+        elif source_button is getattr(self, 'test_online_button', None):
+            enabled = self.translator_mode.currentData() != 'local'
+        self._set_action_button_enabled(source_button, enabled)
+
+    def _task_finished(self, thread, worker):
+        # Ignore a delayed finished signal from a stale task.  In particular,
+        # it must never clear the references of a newer task.
+        if self.thread is not thread or self.worker is not worker:
+            return
+
+        source_button = self._active_task_button
+        was_cancelled = self._cancel_requested
+        self.thread = None
+        self.worker = None
+        self._active_task_button = None
+        self._cancel_requested = False
+        self._restore_task_button(source_button)
+        self._set_action_button_enabled(self.cancel_button, False)
+        if was_cancelled:
+            self._emit_status(_("status_cancel_done"))
+
+    def _start_worker_task(self, method_name, source_button=None, show_models=False):
+        if self._task_is_running():
+            self._emit_status(_("status_offline_test_busy"))
+            return False
+
+        # Finalize stale references before replacing them.  This covers the
+        # small interval between QThread stopping and its finished signal being
+        # delivered to the GUI event loop.
+        if self.thread is not None or self.worker is not None:
+            self._task_finished(self.thread, self.worker)
+
+        thread = QThread(self)
+        worker = MainWorker(self)
+        worker.moveToThread(thread)
+        thread.started.connect(getattr(worker, method_name))
+        if show_models:
+            worker.show_model_dialog.connect(self.show_model_selection_dialog)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(lambda: self._task_finished(thread, worker))
+        thread.finished.connect(thread.deleteLater)
+
+        self.thread = thread
+        self.worker = worker
+        self._active_task_button = source_button
+        self._cancel_requested = False
+        if source_button is not None:
+            self._set_action_button_enabled(source_button, False)
+        self._set_action_button_enabled(self.cancel_button, True)
+        try:
+            thread.start()
+        except Exception:
+            self._task_finished(thread, worker)
+            raise
+        return True
+
     def run_worker(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task('run', self.run_button)
 
     def run_clip(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.clip)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task('clip', self.run_clip_button)
 
     def run_synth(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.synth)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task('synth', self.run_synth_button)
 
     def run_synth_audio(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.audiosynth)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task('audiosynth', self.run_synth_audio_button)
 
     def run_vocal_split(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.vocal_split)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task('vocal_split', self.run_uvr_button)
 
     def run_summarize(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.summarize)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task('summarize', self.run_summarize_button)
 
     def show_model_selection_dialog(self, models):
         dialog = QDialog(self)
@@ -3139,13 +3228,9 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def run_test_online_api(self):
-        self.thread = QThread()
-        self.worker = MainWorker(self)
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.test_online_api)
-        self.worker.show_model_dialog.connect(self.show_model_selection_dialog)
-        self.worker.finished.connect(self.thread.quit)
-        self.thread.start()
+        self._start_worker_task(
+            'test_online_api', self.test_online_button, show_models=True
+        )
 
     def _set_action_button_enabled(self, source_button, enabled):
         """Keep a hidden source action and its visible mirror in sync."""
@@ -3154,58 +3239,33 @@ class MainWindow(QMainWindow):
             if source is source_button:
                 mirror.setEnabled(enabled)
 
-    def _offline_test_finished(self, source_button):
-        enabled = True
-        if source_button is self.test_offline_translation_button:
-            enabled = self.translator_mode.currentData() == 'local'
-        self._set_action_button_enabled(source_button, enabled)
-        self.thread = None
-        self.worker = None
-
-    def _start_offline_test(self, worker_slot, source_button):
-        if self.thread is not None and self.thread.isRunning():
-            self._emit_status(_("status_offline_test_busy"))
-            return
-
-        self._set_action_button_enabled(source_button, False)
-        thread = QThread(self)
-        worker = MainWorker(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker_slot(worker))
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(
-            lambda button=source_button: self._offline_test_finished(button)
-        )
-        thread.finished.connect(thread.deleteLater)
-        self.thread = thread
-        self.worker = worker
-        thread.start()
-
     def run_test_offline_asr(self):
-        self._start_offline_test(
-            lambda worker: worker.test_offline_asr,
-            self.test_offline_asr_button,
+        self._start_worker_task(
+            'test_offline_asr', self.test_offline_asr_button
         )
 
     def run_test_offline_translation(self):
-        self._start_offline_test(
-            lambda worker: worker.test_offline_translation,
-            self.test_offline_translation_button,
+        self._start_worker_task(
+            'test_offline_translation', self.test_offline_translation_button
         )
     
     def cleaner(self):
+        if self._task_is_running():
+            self._emit_status(_("status_offline_test_busy"))
+            return
         self._emit_status(_("status_cleaning_intermediate"))
-        if os.path.exists('project/gt_input'):
-            shutil.rmtree('project/gt_input')
-        if os.path.exists('project/gt_output'):
-            shutil.rmtree('project/gt_output')
-        if os.path.exists('project/transl_cache'):
-            shutil.rmtree('project/transl_cache')
-        self._emit_status(_("status_cleaning_output"))
-        if os.path.exists('project/cache'):
-            shutil.rmtree('project/cache')
-        os.makedirs('project/cache', exist_ok=True)
+        try:
+            project_root = Path('project').resolve()
+            for name in ('gt_input', 'gt_output', 'transl_cache', 'cache'):
+                target = project_root / name
+                if target.is_symlink() or not target.resolve().is_relative_to(project_root):
+                    raise ValueError(f'Cache path points outside project: {target}')
+                if target.exists():
+                    shutil.rmtree(target)
+            (project_root / 'cache').mkdir(exist_ok=True, parents=True)
+            self._emit_status(_("status_cleaning_done"))
+        except Exception as exc:
+            self._emit_status(_("status_generic_error", error=exc))
 
 def error_handler(func):
     def wrapper(self):
@@ -3213,9 +3273,11 @@ def error_handler(func):
             func(self)
         except Exception as e:
             self._emit_status(_("status_generic_error", error=e))
-            self.finished.emit()
             # Ensure all child processes are terminated on error
-            self.stop()
+            try:
+                self.stop()
+            finally:
+                self.finished.emit()
 
     return wrapper
 class MainWorker(QObject):
@@ -3231,7 +3293,9 @@ class MainWorker(QObject):
         self._child_processes_lock = threading.Lock()
         self._proc_readers = {}
         self._stop_requested = False
-        self._stop_event = asyncio.Event()
+        # Cancellation is requested by the GUI thread and observed by worker
+        # threads, so this must be the thread-safe Event implementation.
+        self._stop_event = threading.Event()
 
     def _emit_status(self, msg: str):
         """同时向统一消息队列和窗口标题发送状态消息"""
@@ -3285,11 +3349,29 @@ class MainWorker(QObject):
             self._cleanup_process(proc)
 
     def stop(self):
-        self._stop_requested = True
-        self._stop_event.set()
+        self.request_stop()
         self._terminate_all_children()
         if hasattr(self, '_translation_pool') and self._translation_pool:
             self._translation_pool.stop()
+
+    def request_stop(self):
+        """Request cooperative cancellation without blocking the GUI thread."""
+        self._stop_requested = True
+        self._stop_event.set()
+
+        # Wake subprocess waiters promptly.  Full waiting and cleanup remains
+        # in stop()/the worker's normal unwind path.
+        with self._child_processes_lock:
+            children = list(self.child_processes)
+        for proc in children:
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+            except Exception:
+                pass
+
+        if hasattr(self, '_translation_pool') and self._translation_pool:
+            self._translation_pool.request_stop()
 
     def save_config(self, silent: bool = False):
         self.master.save_config(silent)
@@ -4201,10 +4283,10 @@ class MainWorker(QObject):
 
             tf: TranscribedFile | None = None
 
-            if input_file.endswith('.srt'):
+            if input_file.lower().endswith('.srt'):
                 # —— SRT 输入：直接转换 ——
                 self._emit_status(_("status_srt_converting"))
-                json_path = os.path.join(transcribed_dir, os.path.basename(input_file).replace('.srt', '.json'))
+                json_path = os.path.join(transcribed_dir, f'{idx}_' + Path(input_file).stem + '.json')
                 make_prompt(input_file, json_path)
                 self._emit_status(_("status_srt_convert_done"))
                 # 复制原始 SRT 到输出目录（供双语合并用）
@@ -4236,7 +4318,7 @@ class MainWorker(QObject):
                 base_path = input_file.rsplit('.', 1)[0] if '.' in input_file else input_file
                 existing_srt = base_path + '.srt'
                 wav_file = base_path + '.16k.wav'
-                json_path = os.path.join(transcribed_dir, os.path.basename(base_path) + '.json')
+                json_path = os.path.join(transcribed_dir, f'{idx}_' + os.path.basename(base_path) + '.json')
 
                 # 检测是否已有srt文件
                 if os.path.exists(existing_srt):
@@ -4244,7 +4326,7 @@ class MainWorker(QObject):
                     make_prompt(existing_srt, json_path)
 
                     # 生成原文 SRT/LRC 输出（与正常听写流程一致）
-                    if output_format == '原文SRT' or output_format == '双语SRT':
+                    if output_format in ('原文SRT', '双语SRT') or need_translate:
                         srt_output = os.path.join(current_output_dir, os.path.basename(base_path + '.srt'))
                         if not os.path.exists(srt_output):
                             make_srt(json_path, srt_output)
@@ -4269,15 +4351,18 @@ class MainWorker(QObject):
                             orig_srt_path='',
                         )
                         self._translation_pool.submit(tf)
-                        continue
+                    continue
 
                 self._emit_status(_("status_extracting_audio"))
                 ffmpeg_proc, _unused = start_named_proc(
                     'ffmpeg_extract',
                     [_FFMPEG, '-y', '-i', input_file, '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', wav_file]
                 )
-                ffmpeg_proc.wait()
+                extract_code = ffmpeg_proc.wait()
                 stop_named_proc('ffmpeg_extract')
+
+                if extract_code != 0:
+                    raise RuntimeError(f'FFmpeg audio extraction failed with code {extract_code}')
 
                 if not os.path.exists(wav_file):
                     self._emit_status(_("status_audio_extract_error"))
@@ -4285,7 +4370,7 @@ class MainWorker(QObject):
 
                 # 检查是否启用分段处理
                 base_path = wav_file[:-8]  # 去掉 .16k.wav
-                json_path = os.path.join(transcribed_dir, os.path.basename(base_path) + '.json')
+                json_path = os.path.join(transcribed_dir, f'{idx}_' + os.path.basename(base_path) + '.json')
 
                 total_duration = self._get_audio_duration(wav_file)
                 threshold_seconds = segment_duration_minutes * 60
@@ -4348,6 +4433,9 @@ class MainWorker(QObject):
                             segment_tfs.append(segment_tf)
 
                     # 等待所有分段翻译完成
+                    if need_translate:
+                        original_segments = [segment[:-4] + '.srt' for segment in segment_files]
+                        merge_srt_files(original_segments, os.path.join(current_output_dir, os.path.basename(base_path) + '.srt'), threshold_seconds)
                     if need_translate and segment_tfs:
                         self._emit_status(_("status_wait_segments"))
                         self._translation_pool.wait_pending()
@@ -4376,7 +4464,7 @@ class MainWorker(QObject):
                     )
 
                     # 生成原文 SRT/LRC 输出
-                    if output_format == '原文SRT' or output_format == '双语SRT':
+                    if output_format in ('原文SRT', '双语SRT') or need_translate:
                         srt_output = os.path.join(current_output_dir, os.path.basename(base_path + '.srt'))
                         make_srt(json_path, srt_output)
 
@@ -4408,22 +4496,28 @@ class MainWorker(QObject):
             if need_translate and tf is not None:
                 self._translation_pool.submit(tf)
 
-        # 发送哨兵，等待翻译线程结束
-        self._emit_status(_("status_all_transcribed"))
+        # 发送哨兵，等待翻译线程结束。取消任务时直接进入停止清理，
+        # 不再把取消误报为正常完成（也避免触发自动关机）。
+        was_cancelled = self._stop_event.is_set()
+        if not was_cancelled:
+            self._emit_status(_("status_all_transcribed"))
+        err_count = 0
         if self._translation_pool is not None:
-            self._translation_pool.done()
-            self._translation_pool.wait_all(timeout=600)
+            if not was_cancelled:
+                self._translation_pool.done()
+                self._translation_pool.wait_all()
             self._translation_pool.stop()
 
             err_count = self._translation_pool.error_count
             if err_count > 0:
                 self._emit_status(_("status_translate_fail_count", count=err_count))
 
-        # 完成屏障：先排空消息队列，再放入完成哨兵
-        # 确保所有翻译日志在"所有文件处理完成"之前被 GUI 消费
-        self.msg_queue.drain_all(timeout=3.0)
-        self.msg_queue.put_completion_sentinel()
-        self.msg_queue.set_completion_flag()
+        if not was_cancelled and not err_count:
+            # 完成屏障：先排空消息队列，再放入完成哨兵
+            # 确保所有翻译日志在"所有文件处理完成"之前被 GUI 消费
+            self.msg_queue.drain_all(timeout=3.0)
+            self.msg_queue.put_completion_sentinel()
+            self.msg_queue.set_completion_flag()
         self.finished.emit()
 
 if __name__ == "__main__":

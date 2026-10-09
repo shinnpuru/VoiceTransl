@@ -4,6 +4,7 @@ _current_lang = "zh"
 
 TRANSLATIONS = {
     "zh": {
+        "status_cleaning_done": "[INFO] 缓存清理完成，输出文件已保留。",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
         "tray_tooltip": "VoiceTransl",
@@ -352,6 +353,7 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [进程{idx}] 翻译进程已结束 (exit={retcode})",
     },
     "en": {
+        "status_cleaning_done": "[INFO] Cache cleared; output files preserved.",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
         "tray_tooltip": "VoiceTransl",
@@ -702,6 +704,7 @@ TRANSLATIONS = {
         "status_translate_proc_ended": "[INFO] [Worker {idx}] Translation process ended (exit={retcode})",
     },
     "ja": {
+        "status_cleaning_done": "[INFO] キャッシュを削除しました。出力ファイルは保持されています。",
         # === Window & Tray ===
         "window_title": "VoiceTransl",
         "tray_tooltip": "VoiceTransl",

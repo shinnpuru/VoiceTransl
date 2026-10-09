@@ -69,6 +69,21 @@ class InputTests(unittest.TestCase):
 
 
 class SubtitleOutputTests(unittest.TestCase):
+    def test_translation_output_keeps_user_source_srt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'gt_output').mkdir()
+            (root / 'gt_output/input.json').write_text('[{"start":0,"end":1,"message":"target"}]', encoding='utf-8')
+            source = root / 'input.srt'
+            source.write_text('original subtitle', encoding='utf-8')
+            ConcurrentTranslationPool._generate_output_impl('input.json', str(root / 'input'), str(root), '目标LRC', str(root))
+            self.assertEqual(source.read_text(encoding='utf-8'), 'original subtitle')
+
+    def test_missing_translation_output_points_to_backend_logs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(RuntimeError, 'GalTransl.log'):
+                ConcurrentTranslationPool._generate_output_impl('input.json', 'input', temp, '目标SRT', temp)
+
     def test_asr_preserves_segment_srt_until_merge(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,7 +11,9 @@ from unittest.mock import patch
 _ORIGINAL_STDOUT = sys.stdout
 _ORIGINAL_STDERR = sys.stderr
 from app import (
+    ConcurrentTranslationPool,
     UIMessageQueue,
+    MainWindow,
     _TranslationLogParser,
     _clean_control_chars,
     _compose_output_format,
@@ -108,6 +111,143 @@ class MessageQueueAndLogParserTests(unittest.TestCase):
         queue = Queue()
         _stream_proc_to_queue(Proc(), queue, label="worker")
         self.assertEqual(queue.items, [("detail", "[worker] error")])
+
+
+class TaskLifecycleTests(unittest.TestCase):
+    class Signal:
+        def __init__(self):
+            self.slots = []
+
+        def connect(self, slot):
+            self.slots.append(slot)
+
+        def emit(self):
+            for slot in list(self.slots):
+                slot()
+
+    class Button:
+        def __init__(self, enabled=True):
+            self.enabled = enabled
+
+        def setEnabled(self, enabled):
+            self.enabled = enabled
+
+    class Thread:
+        def __init__(self):
+            self.started = TaskLifecycleTests.Signal()
+            self.finished = TaskLifecycleTests.Signal()
+            self.running = False
+            self.quit_requested = False
+            self.interruption_requested = False
+
+        def start(self):
+            self.running = True
+
+        def isRunning(self):
+            return self.running
+
+        def quit(self):
+            self.quit_requested = True
+
+        def requestInterruption(self):
+            self.interruption_requested = True
+
+        def deleteLater(self):
+            pass
+
+    class Worker:
+        def __init__(self):
+            self.finished = TaskLifecycleTests.Signal()
+            self.show_model_dialog = TaskLifecycleTests.Signal()
+            self.stop_requested = False
+
+        def moveToThread(self, thread):
+            self.thread = thread
+
+        def run(self):
+            pass
+
+        def request_stop(self):
+            self.stop_requested = True
+
+        def deleteLater(self):
+            pass
+
+    class Window:
+        _task_is_running = MainWindow._task_is_running
+        _restore_task_button = MainWindow._restore_task_button
+        _task_finished = MainWindow._task_finished
+        _start_worker_task = MainWindow._start_worker_task
+        _set_action_button_enabled = MainWindow._set_action_button_enabled
+        cancel_task = MainWindow.cancel_task
+
+        def __init__(self):
+            self.thread = None
+            self.worker = None
+            self._active_task_button = None
+            self._cancel_requested = False
+            self._button_mirrors = []
+            self.cancel_button = TaskLifecycleTests.Button(False)
+            self.messages = []
+
+        def _emit_status(self, message):
+            self.messages.append(message)
+
+    def test_cancel_blocks_restart_until_old_thread_finishes(self):
+        window = self.Window()
+        run_button = self.Button()
+        first_thread = self.Thread()
+        first_worker = self.Worker()
+        second_thread = self.Thread()
+        second_worker = self.Worker()
+
+        with patch('app.QThread', side_effect=[first_thread, second_thread]), patch(
+            'app.MainWorker', side_effect=[first_worker, second_worker]
+        ):
+            self.assertTrue(window._start_worker_task('run', run_button))
+            window.cancel_task()
+
+            self.assertTrue(first_worker.stop_requested)
+            self.assertTrue(first_thread.quit_requested)
+            self.assertTrue(first_thread.interruption_requested)
+            self.assertFalse(window._start_worker_task('run', run_button))
+            self.assertIs(window.thread, first_thread)
+
+            first_worker.finished.emit()
+            first_thread.running = False
+            first_thread.finished.emit()
+            self.assertIsNone(window.thread)
+            self.assertTrue(run_button.enabled)
+            self.assertFalse(window.cancel_button.enabled)
+
+            self.assertTrue(window._start_worker_task('run', run_button))
+            self.assertIs(window.thread, second_thread)
+
+    def test_translation_pool_terminates_tracked_active_processes(self):
+        class Process:
+            terminated = False
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                self.terminated = True
+
+        stop_event = threading.Event()
+        pool = ConcurrentTranslationPool(
+            project_dir='project',
+            base_config_path='project/config.yaml',
+            max_concurrent=1,
+            stop_event=stop_event,
+            msg_queue=None,
+        )
+        process = Process()
+        pool._active_translate_procs.append(process)
+
+        pool.request_stop()
+
+        self.assertTrue(stop_event.is_set())
+        self.assertTrue(process.terminated)
 
 
 if __name__ == "__main__":
