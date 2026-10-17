@@ -104,15 +104,15 @@ dictionary:
   preDict:
     - 01H字典_矫正_译前.txt # 用于口齿不清的矫正
     - 00通用字典_译前.txt
-    - (project_dir)项目字典_译前.txt # (project_dir)代表字典在项目文件夹
+    - (project_dir)dict_pre.txt # (project_dir)代表字典在项目文件夹
   # GPT 字典
   gpt.dict:
     - GPT字典.txt
-    - (project_dir)项目GPT字典.txt
+    - (project_dir)dict_gpt.txt
     - (project_dir)项目GPT字典-生成.txt
   # 译后字典
   postDict:
     - 00通用字典_符号_译后.txt # 符号矫正
     - 00通用字典_译后.txt
-    - (project_dir)项目字典_译后.txt
+    - (project_dir)dict_after.txt
 """

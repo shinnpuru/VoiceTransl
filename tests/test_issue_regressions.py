@@ -4,6 +4,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import yaml
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -16,6 +17,57 @@ from srt2prompt import make_prompt
 from input_utils import normalize_input, is_remote_input, native_model_path
 from network_utils import is_loopback_endpoint, model_request
 from GalTransl.ConfigHelper import build_httpx_proxy_kwargs, build_httpx_sync_proxy_kwargs
+from GalTransl.DefaultProjectConfig import DEFAULT_PROJECT_CONFIG_YAML
+
+
+class DesktopDictionaryConfigTests(unittest.TestCase):
+    def test_old_config_registers_editor_files_and_clears_empty_prompt(self):
+        def control(value):
+            return SimpleNamespace(text=lambda: value, currentData=lambda: value,
+                                   currentText=lambda: value, toPlainText=lambda: value)
+
+        master = SimpleNamespace(
+            selected_translator=lambda: 'custom',
+            gpt_token=control('test'), gpt_address=control('http://127.0.0.1:8989'),
+            gpt_model=control('test'), sakura_file=control(''), proxy_address=control(''),
+            target_lang=control('zh-cn'), transcription_lang=control('ja'),
+            thinking_mode=control('default'), change_prompt_mode=control('追加'),
+            extra_prompt=control(''),
+        )
+        worker = SimpleNamespace(master=master, _emit_status=lambda message: None,
+                                 stop=lambda: self.fail('Configuration update failed'))
+        for preserve_legacy in (False, True):
+            with self.subTest(preserve_legacy=preserve_legacy), tempfile.TemporaryDirectory() as temp:
+                project = Path(temp) / 'project'
+                project.mkdir()
+                config_path = project / 'config.yaml'
+                config = yaml.safe_load(DEFAULT_PROJECT_CONFIG_YAML)
+                mapping = (
+                    ('preDict', '项目字典_译前.txt', 'dict_pre.txt'),
+                    ('gpt.dict', '项目GPT字典.txt', 'dict_gpt.txt'),
+                    ('postDict', '项目字典_译后.txt', 'dict_after.txt'),
+                )
+                for key, legacy, current in mapping:
+                    config['dictionary'][key] = ['custom.txt', '(project_dir)' + legacy]
+                    if preserve_legacy:
+                        (project / legacy).write_text('old\tvalue\n', encoding='utf-8')
+                config_path.write_text(yaml.safe_dump(config, allow_unicode=True), encoding='utf-8')
+                previous_cwd = os.getcwd()
+                try:
+                    os.chdir(temp)
+                    # Repeat to check that upgrades do not add duplicate entries.
+                    MainWorker.update_translation_config(worker)
+                    MainWorker.update_translation_config(worker)
+                finally:
+                    os.chdir(previous_cwd)
+                updated = yaml.safe_load(config_path.read_text(encoding='utf-8'))
+                for key, legacy, current in mapping:
+                    entries = updated['dictionary'][key]
+                    self.assertEqual(entries.count('(project_dir)' + current), 1)
+                    self.assertIn('custom.txt', entries)
+                    self.assertEqual('(project_dir)' + legacy in entries, preserve_legacy)
+                self.assertEqual(updated['common']['gpt.change_prompt'], 'AdditionalPrompt')
+                self.assertEqual(updated['common']['gpt.prompt_content'], '')
 
 
 class ProxyTests(unittest.TestCase):

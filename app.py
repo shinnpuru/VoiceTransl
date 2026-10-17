@@ -3470,6 +3470,23 @@ class MainWorker(QObject):
             self._emit_status(_("status_config_read_error", error=e))
             return
 
+        # Register the dictionaries written by the desktop editor, including
+        # projects created with the old Chinese filenames in the template.
+        dict_cfg = cfg.setdefault('dictionary', {})
+        for key, legacy_name, filename in (
+            ('preDict', '项目字典_译前.txt', 'dict_pre.txt'),
+            ('gpt.dict', '项目GPT字典.txt', 'dict_gpt.txt'),
+            ('postDict', '项目字典_译后.txt', 'dict_after.txt'),
+        ):
+            entries = list(dict_cfg.get(key) or [])
+            legacy_entry = '(project_dir)' + legacy_name
+            desktop_entry = '(project_dir)' + filename
+            if not os.path.exists(os.path.join('project', legacy_name)):
+                entries = [desktop_entry if entry == legacy_entry else entry for entry in entries]
+            if desktop_entry not in entries:
+                entries.append(desktop_entry)
+            dict_cfg[key] = list(dict.fromkeys(entries))
+
         # Update language setting
         if 'common' not in cfg:
             cfg['common'] = {}
@@ -3551,7 +3568,7 @@ class MainWorker(QObject):
 
         cfg['common']['gpt.change_prompt'] = mode_mapping.get(change_prompt_mode, 'no')
 
-        if change_prompt_mode != '不修改' and extra_prompt:
+        if change_prompt_mode != '不修改':
             cfg['common']['gpt.prompt_content'] = extra_prompt
         elif change_prompt_mode == '不修改':
             # If mode is 'no', clear the prompt_content to use default

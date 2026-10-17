@@ -115,7 +115,19 @@ class TranslationIntegrationTests(unittest.TestCase):
                 config = yaml.safe_load(DEFAULT_PROJECT_CONFIG_YAML)
                 config['backendSpecific']['OpenAI-Compatible'].update(tokens=[{'token': 'test', 'endpoint': f'http://127.0.0.1:{server.server_port}', 'modelName': 'test'}], stream=stream, thinkingMode='enable_thinking', apiErrorWait=0)
                 config['common'].update(language='ja2zh-cn', workersPerProject=1, splitFile='no', **{'gpt.restoreContextMode': False})
-                config['dictionary'].update(preDict=[], postDict=[], **{'gpt.dict': []})
+                config['common'].update(**{
+                    'gpt.change_prompt': 'AdditionalPrompt',
+                    'gpt.prompt_content': '保持人物语气自然。',
+                })
+                for key, filename, content in (
+                    ('preDict', 'dict_pre.txt', '原文\t校正'),
+                    ('gpt.dict', 'dict_gpt.txt', '校正\t约定译名'),
+                    ('postDict', 'dict_after.txt', '文件夹\t目录'),
+                ):
+                    entry = '(project_dir)' + filename
+                    self.assertIn(entry, config['dictionary'][key])
+                    config['dictionary'][key] = [entry]
+                    (root / filename).write_text(content + '\n', encoding='utf-8')
                 (root / 'config.yaml').write_text(yaml.safe_dump(config, allow_unicode=True), encoding='utf-8')
                 messages = UIMessageQueue(str(root / 'test.log'))
                 with patch.dict(os.environ, {'HTTP_PROXY': 'http://127.0.0.1:1', 'HTTPS_PROXY': 'http://127.0.0.1:1'}):
@@ -125,9 +137,15 @@ class TranslationIntegrationTests(unittest.TestCase):
                 self.assertIn('0/2', log)
                 self.assertIn('2/2', log)
                 combined = (root / 'input.combine.lrc').read_text(encoding='utf-8')
-                for expected in ('原文一', '原文二', '译文1 / 文件夹', '译文2 / 文件夹'):
+                for expected in ('原文一', '原文二', '译文1 / 目录', '译文2 / 目录'):
                     self.assertIn(expected, combined)
                 self.assertTrue(received)
+                translation_prompts = [payload['messages'][-1]['content'] for payload in received
+                                       if '校正一' in payload['messages'][-1]['content']]
+                self.assertTrue(translation_prompts)
+                for prompt in translation_prompts:
+                    self.assertIn('约定译名', prompt)
+                    self.assertIn('保持人物语气自然。', prompt)
                 self.assertTrue(all(payload.get('enable_thinking') is False for payload in received))
                 self.assertTrue(source.exists())
                 self.assertEqual(active, [])

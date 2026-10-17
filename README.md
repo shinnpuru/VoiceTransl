@@ -42,6 +42,10 @@ VoiceTransl聆译是一站式离线AI视频字幕生成和翻译软件，支持W
 
 使用说明请见 [视频教程](https://www.bilibili.com/video/BV12FjN6iEmz)。
 
+字典页中的译前、GPT、译后字典分别保存为 `project/dict_pre.txt`、`project/dict_gpt.txt`、`project/dict_after.txt`。配置文件 `project/config.yaml` 的 `dictionary` 下，`preDict`、`gpt.dict`、`postDict` 需要分别包含 `(project_dir)dict_pre.txt`、`(project_dir)dict_gpt.txt`、`(project_dir)dict_after.txt`。界面启动翻译时会自动补齐这三项，并保留自定义字典引用。
+
+使用额外提示词时，在字典页填写内容，再将提示词模式设为“追加”；默认的“不修改”不会启用。“覆盖”会替换默认用户提示词，需要自行保留输入、术语表及输出格式要求。此设置适用于通用翻译后端（包括通过 OpenAI 兼容接口连接的本地模型）；Sakura 专用后端目前不读取该设置。
+
 ## 声明
 
 本软件仅供学习交流使用，不得用于商业用途。本软件不对任何使用者的行为负责，不保证翻译结果的准确性。使用本软件即代表您同意自行承担使用本软件的风险，包括但不限于版权风险、法律风险等。请遵守当地法律法规，不要使用本软件进行任何违法行为。
