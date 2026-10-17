@@ -207,12 +207,20 @@ jobs:
             Write-Host "Bundled $fileName -> $filePath"
           }
 
-          # Run the copied runtimes, with each backend loading its own DLLs.
-          # These commands do not require models or a GPU on the build runner.
+          python scripts/verify_native_runtime.py $bundleRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled native DLL dependency check failed' }
+
+          # CrispASR directly imports its graphics driver/loader DLL, so even
+          # --help can require a driver that is absent on GitHub's build runner.
           & (Join-Path $bundleRoot 'llama/llama-server.exe') --version
           if ($LASTEXITCODE -ne 0) { throw 'Bundled llama-server failed to start' }
-          & (Join-Path $bundleRoot 'crispasr/crispasr.exe') --help
-          if ($LASTEXITCODE -ne 0) { throw 'Bundled CrispASR failed to start' }
+          $driverDll = if ('${{ matrix.llama_variant }}' -eq 'cuda-12.4') { 'nvcuda.dll' } else { 'vulkan-1.dll' }
+          if (Test-Path -LiteralPath (Join-Path "$env:SystemRoot/System32" $driverDll)) {
+            & (Join-Path $bundleRoot 'crispasr/crispasr.exe') --help
+            if ($LASTEXITCODE -ne 0) { throw "Bundled CrispASR failed to start: $LASTEXITCODE" }
+          } else {
+            Write-Host "Graphics driver/loader $driverDll absent on runner; backend DLL dependencies verified statically."
+          }
           & (Join-Path $bundleRoot 'translate/translate.exe') --help
           if ($LASTEXITCODE -ne 0) { throw 'Bundled translator failed to start' }
           & (Join-Path $bundleRoot 'separate/separate.exe') --help
