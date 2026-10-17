@@ -184,36 +184,48 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $requiredFiles = 'translate.exe', 'separate.exe', 'llama-server.exe', 'crispasr.exe', 'ffmpeg.exe', 'ffprobe.exe'
+          $bundleRoot = (Resolve-Path -LiteralPath 'dist/VoiceTransl/_internal').Path
+          $requiredFiles = 'translate/translate.exe', 'separate/separate.exe', 'llama/llama-server.exe', 'crispasr/crispasr.exe', 'ffmpeg/ffmpeg.exe', 'ffmpeg/ffprobe.exe'
           if ('${{ matrix.llama_variant }}' -eq 'vulkan') {
-            $requiredFiles += 'ggml-vulkan.dll'
+            $requiredFiles += 'llama/ggml-vulkan.dll', 'crispasr/ggml-vulkan.dll'
           }
           if ('${{ matrix.llama_variant }}' -eq 'cuda-12.4') {
-            $requiredFiles += 'ggml-cuda.dll', 'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll'
+            foreach ($backend in 'llama', 'crispasr') {
+              foreach ($dll in 'ggml-cuda.dll', 'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll') {
+                $requiredFiles += "$backend/$dll"
+                if (Test-Path -LiteralPath (Join-Path $bundleRoot $dll)) {
+                  throw "Redundant native DLL in the main runtime: $dll"
+                }
+              }
+            }
           }
           foreach ($fileName in $requiredFiles) {
-            $matches = @(Get-ChildItem -LiteralPath 'dist' -Recurse -File -Filter $fileName)
-            if ($matches.Count -eq 0) {
+            $filePath = Join-Path $bundleRoot $fileName
+            if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) {
               throw "Required bundled executable is missing: $fileName"
             }
-            $matches | ForEach-Object { Write-Host "Bundled $fileName -> $($_.FullName)" }
+            Write-Host "Bundled $fileName -> $filePath"
           }
+
+          # Run the copied runtimes, with each backend loading its own DLLs.
+          # These commands do not require models or a GPU on the build runner.
+          & (Join-Path $bundleRoot 'llama/llama-server.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled llama-server failed to start' }
+          & (Join-Path $bundleRoot 'crispasr/crispasr.exe') --help
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled CrispASR failed to start' }
+          & (Join-Path $bundleRoot 'translate/translate.exe') --help
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled translator failed to start' }
+          & (Join-Path $bundleRoot 'separate/separate.exe') --help
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled vocal separation failed to start' }
 
       - name: Package Windows app
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path -LiteralPath 'dist/VoiceTransl' -PathType Container)) {
-            throw 'dist/VoiceTransl is missing'
-          }
-          New-Item -ItemType Directory -Force -Path 'artifact' | Out-Null
           $archivePath = Join-Path 'artifact' "$env:PACKAGE_NAME.zip"
-          Compress-Archive -LiteralPath 'dist/VoiceTransl' -DestinationPath $archivePath -CompressionLevel Optimal
-          if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
-            throw "Windows app archive was not created: $archivePath"
-          }
-          Get-Item -LiteralPath $archivePath | Format-List FullName, Length
+          python scripts/package_windows.py 'dist/VoiceTransl' $archivePath
+          if ($LASTEXITCODE -ne 0) { throw 'Single ZIP packaging failed' }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -245,24 +257,10 @@ jobs:
           test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win.zip"
           test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip"
 
-          # GitHub Releases limits each asset to less than 2 GiB. The CUDA
-          # package is larger, so convert it to a standard split ZIP that can
-          # be opened with 7-Zip after downloading both volumes.
-          cuda_archive="release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip"
-          cuda_full_archive="release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.full.zip"
-          mv "$cuda_archive" "$cuda_full_archive"
-          zip -s 1800m "$cuda_full_archive" --out "$cuda_archive"
-          rm "$cuda_full_archive"
-          test -s "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda.z01"
-
-          cat > "release/VoiceTransl-${GITHUB_REF_NAME}-win-cuda-INSTRUCTIONS.txt" <<EOF
-          Download both VoiceTransl-${GITHUB_REF_NAME}-win-cuda.z01 and VoiceTransl-${GITHUB_REF_NAME}-win-cuda.zip into the same directory, then open the .zip file with 7-Zip to extract the CUDA package.
-          EOF
-
           while IFS= read -r -d '' release_asset; do
             asset_size="$(stat -c '%s' "$release_asset")"
-            if (( asset_size >= 2147483648 )); then
-              echo "Release asset exceeds GitHub's 2 GiB limit: $release_asset ($asset_size bytes)" >&2
+            if (( asset_size >= 2000000000 )); then
+              echo "Release asset must be below 2 GB: $release_asset ($asset_size bytes)" >&2
               exit 1
             fi
           done < <(find release -maxdepth 1 -type f -print0)
@@ -284,9 +282,10 @@ jobs:
               --verify-tag
           fi
 
-          # Remove assets from the legacy CPU-only release after the new assets
-          # have been uploaded successfully.
-          for legacy_asset in VoiceTransl-windows.zip VoiceTransl-macos.zip; do
+          # Remove old split volumes only after the complete ZIPs are uploaded.
+          for legacy_asset in VoiceTransl-windows.zip VoiceTransl-macos.zip \
+            "VoiceTransl-${GITHUB_REF_NAME}-win-cuda.z01" \
+            "VoiceTransl-${GITHUB_REF_NAME}-win-cuda-INSTRUCTIONS.txt"; do
             gh release delete-asset "$GITHUB_REF_NAME" "$legacy_asset" \
               --repo "$GITHUB_REPOSITORY" \
               --yes 2>/dev/null || true
