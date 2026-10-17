@@ -81,8 +81,10 @@ jobs:
           $ffmpegArchive = Join-Path $nativeRoot 'ffmpeg.zip'
           New-Item -ItemType Directory -Force -Path $ffmpegExtract | Out-Null
 
-          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-$env:FFMPEG_VERSION-essentials_build.zip"
-          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegArchive
+          # The website removes older packages; its official GitHub mirror
+          # retains versioned assets with the same pinned checksum.
+          $ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/$env:FFMPEG_VERSION/ffmpeg-$env:FFMPEG_VERSION-essentials_build.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegArchive -MaximumRetryCount 3 -RetryIntervalSec 5
           $actualHash = (Get-FileHash -LiteralPath $ffmpegArchive -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actualHash -ne $env:FFMPEG_SHA256) {
             throw "FFmpeg archive checksum mismatch: expected $env:FFMPEG_SHA256, got $actualHash"
@@ -270,6 +272,10 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" release/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft=false \
+              --latest
           else
             gh release create "$GITHUB_REF_NAME" release/* \
               --repo "$GITHUB_REPOSITORY" \
