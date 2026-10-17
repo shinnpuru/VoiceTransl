@@ -4,7 +4,7 @@
 </p>
 
 <h1><p align='center' >VoiceTransl 聆译</p></h1>
-<div align=center><img src="https://img.shields.io/github/v/release/shinnpuru/VoiceTransl"/>   <img src="https://img.shields.io/github/license/shinnpuru/VoiceTransl"/>   <img src="https://img.shields.io/github/stars/shinnpuru/VoiceTransl"/></div>
+<div align=center><img src="https://img.shields.io/github/v/release/shinnpuru/VoiceTransl"/>   <img src="https://img.shields.io/github/release-date/shinnpuru/VoiceTransl"/>   <img src="https://img.shields.io/github/stars/shinnpuru/VoiceTransl"/></div>
 
 <p align="center">简体中文 | <a href="README_EN.md">English</a></p>
 
@@ -52,7 +52,7 @@ VoiceTransl聆译是一站式离线AI视频字幕生成和翻译软件，支持W
 
 ## 贡献者
 
-@[shinnpuru](https://github.com/shinnpuru) @[MurthiNext](https://github.com/MurthiNext)
+[shinnpuru](https://github.com/shinnpuru) [MurthiNext](https://github.com/MurthiNext) [chenflxs](https://github.com/chenflxs)
 
 ## 如果对你有帮助的话请给一个Star!
 
