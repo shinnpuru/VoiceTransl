@@ -70,6 +70,7 @@ from bilibili_dl.bilibili_dl.constants import URL_VIDEO_INFO
 from pathlib import Path
 from input_utils import normalize_input, is_remote_input, native_model_path
 from network_utils import is_loopback_endpoint, model_request
+from GalTransl.Thinking import thinking_body
 
 
 NO_TRANSCRIPTION = '不进行听写'
@@ -1347,7 +1348,7 @@ class MainWindow(QMainWindow):
             'asr_max_chars': self.asr_length_slider.value(),
             'gpt_address': gpt_address,
             'gpt_model': gpt_model,
-            'thinking_mode': self.thinking_mode.currentData(),
+            'thinking_enabled': self.thinking_checkbox.isChecked(),
             'sakura_file': sakura_file,
             'sakura_mode': sakura_mode,
             'proxy_address': proxy_address,
@@ -2056,7 +2057,7 @@ class MainWindow(QMainWindow):
                 self.transcription_lang.setCurrentIndex(language_index)
             self.gpt_address.setText(gui_settings.get('gpt_address', ''))
             self.gpt_model.setText(gui_settings.get('gpt_model', ''))
-            self.thinking_mode.setCurrentIndex(max(0, self.thinking_mode.findData(gui_settings.get('thinking_mode', 'default'))))
+            self.thinking_checkbox.setChecked(gui_settings.get('thinking_enabled') is True)
             if self.sakura_file:
                 self.sakura_file.setCurrentText(gui_settings.get('sakura_file', ''))
             self.sakura_mode.setText(gui_settings.get('sakura_mode', ''))
@@ -2586,11 +2587,8 @@ class MainWindow(QMainWindow):
         for widget, translation_key in self._dynamic_i18n_labels:
             widget.setText(_(translation_key))
         self._update_asr_length_label()
-        self._retranslate_combo(self.thinking_mode, {
-            'default': 'thinking_default', 'enable_thinking': 'thinking_siliconflow',
-            'thinking': 'thinking_deepseek', 'chat_template': 'thinking_local',
-        })
-        self.thinking_mode.setToolTip(_("thinking_tip"))
+        self.thinking_checkbox.setText(_("thinking_label"))
+        self.thinking_checkbox.setToolTip(_("thinking_tip"))
         for index, translation_key in enumerate(self._main_tab_i18n_keys):
             self.main_tab_bar.setTabText(index, _(translation_key))
         for source_button, mirror_button in self._button_mirrors:
@@ -2964,14 +2962,10 @@ class MainWindow(QMainWindow):
         self.param_llama.setPlaceholderText(_("adv_offline_param_placeholder"))
         self.advanced_settings_layout.addWidget(self.param_llama)
 
-        thinking_label = BodyLabel(_("thinking_label"))
-        self._dynamic_i18n_labels.append((thinking_label, 'thinking_label'))
-        self.advanced_settings_layout.addWidget(thinking_label)
-        self.thinking_mode = QComboBox()
-        for value, key in (('default', 'thinking_default'), ('enable_thinking', 'thinking_siliconflow'), ('thinking', 'thinking_deepseek'), ('chat_template', 'thinking_local')):
-            self.thinking_mode.addItem(_(key), userData=value)
-        self.thinking_mode.setToolTip(_("thinking_tip"))
-        self.advanced_settings_layout.addWidget(self.thinking_mode)
+        self.thinking_checkbox = QCheckBox(_("thinking_label"))
+        self.thinking_checkbox.setChecked(False)
+        self.thinking_checkbox.setToolTip(_("thinking_tip"))
+        self.advanced_settings_layout.addWidget(self.thinking_checkbox)
 
         button_layout = QHBoxLayout()
 
@@ -3536,7 +3530,8 @@ class MainWorker(QObject):
                 'modelName': model
             }]
             openai_cfg['tokenStrategy'] = "random"
-            openai_cfg['thinkingMode'] = self.master.thinking_mode.currentData() or 'default'
+            openai_cfg.pop('thinkingMode', None)
+            openai_cfg['thinkingEnabled'] = self.master.thinking_checkbox.isChecked()
             openai_cfg['checkAvailable'] = True
             openai_cfg['stream'] = True
             openai_cfg['apiTimeout'] = 120
@@ -3754,6 +3749,10 @@ class MainWorker(QObject):
                             }],
                             'max_tokens': 8,
                             'temperature': 0,
+                            **thinking_body(
+                                self.master.thinking_checkbox.isChecked(),
+                                f'http://127.0.0.1:{port}', model_file,
+                            ),
                         },
                         timeout=8,
                     )

@@ -10,6 +10,7 @@ backendSpecific:
         modelName: deepseek/deepseek-chat-v3-0324:free
         stream: true # 支持为单个token设置流式请求
     tokenStrategy: "random" # 令牌策略，random随机轮询；fallback优先第一个，出现[API错误]或[解析错误]时使用下一个
+    thinkingEnabled: false # 开启思考；默认关闭，仅对支持切换思考的模型生效。[True/False]
     checkAvailable: true # 翻译前检查API是否可用[True/False]
     checkAvailableConcurrency: 4 # checkAvailable阶段的并发检测数，避免启动时瞬时打满请求。[1-16]
     globalRequestRPM: 0 # 全局跨任务请求限速（每分钟请求数）。0表示不限制。[0-60000]

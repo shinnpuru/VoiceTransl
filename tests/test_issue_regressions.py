@@ -24,14 +24,15 @@ class DesktopDictionaryConfigTests(unittest.TestCase):
     def test_old_config_registers_editor_files_and_clears_empty_prompt(self):
         def control(value):
             return SimpleNamespace(text=lambda: value, currentData=lambda: value,
-                                   currentText=lambda: value, toPlainText=lambda: value)
+                                   currentText=lambda: value, toPlainText=lambda: value,
+                                   isChecked=lambda: value)
 
         master = SimpleNamespace(
             selected_translator=lambda: 'custom',
             gpt_token=control('test'), gpt_address=control('http://127.0.0.1:8989'),
             gpt_model=control('test'), sakura_file=control(''), proxy_address=control(''),
             target_lang=control('zh-cn'), transcription_lang=control('ja'),
-            thinking_mode=control('default'), change_prompt_mode=control('追加'),
+            thinking_checkbox=control(False), change_prompt_mode=control('追加'),
             extra_prompt=control(''),
         )
         worker = SimpleNamespace(master=master, _emit_status=lambda message: None,
@@ -42,6 +43,8 @@ class DesktopDictionaryConfigTests(unittest.TestCase):
                 project.mkdir()
                 config_path = project / 'config.yaml'
                 config = yaml.safe_load(DEFAULT_PROJECT_CONFIG_YAML)
+                config['backendSpecific']['OpenAI-Compatible']['thinkingMode'] = 'default'
+                master.thinking_checkbox = control(preserve_legacy)
                 mapping = (
                     ('preDict', '项目字典_译前.txt', 'dict_pre.txt'),
                     ('gpt.dict', '项目GPT字典.txt', 'dict_gpt.txt'),
@@ -68,6 +71,8 @@ class DesktopDictionaryConfigTests(unittest.TestCase):
                     self.assertEqual('(project_dir)' + legacy in entries, preserve_legacy)
                 self.assertEqual(updated['common']['gpt.change_prompt'], 'AdditionalPrompt')
                 self.assertEqual(updated['common']['gpt.prompt_content'], '')
+                self.assertIs(updated['backendSpecific']['OpenAI-Compatible']['thinkingEnabled'], preserve_legacy)
+                self.assertNotIn('thinkingMode', updated['backendSpecific']['OpenAI-Compatible'])
 
 
 class ProxyTests(unittest.TestCase):

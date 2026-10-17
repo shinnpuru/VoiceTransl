@@ -175,7 +175,8 @@ class BaseTranslate:
 
     def init_chatbot(self, eng_type, config: CProjectConfig):
         section_name = "OpenAI-Compatible"
-        self.thinking_mode = config.getBackendConfigSection(section_name).get('thinkingMode', 'default')
+        backend_config = config.getBackendConfigSection(section_name)
+        self.thinking_mode = backend_config.get('thinkingEnabled', backend_config.get('thinkingMode', False))
 
         self.api_timeout = config.getBackendConfigSection(section_name).get(
             "apiTimeout", 60
@@ -641,7 +642,7 @@ class BaseTranslate:
                         timeout=self.api_timeout,
                         top_p=top_p,
                         reasoning_effort=reasoning_effort,
-                        **({'extra_body': thinking_body(self.thinking_mode)} if getattr(self, 'thinking_mode', 'default') != 'default' else {}),
+                        extra_body=thinking_body(getattr(self, 'thinking_mode', False), token.domain, token.model_name),
                     )
                 )
 

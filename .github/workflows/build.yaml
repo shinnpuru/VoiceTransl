@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version (for example: v1.30)'
+        description: 'Package version (for example: v1.31)'
         required: true
-        default: 'v1.30'
+        default: 'v1.31'
 
 env:
   LLAMA_CPP_VERSION: b10430

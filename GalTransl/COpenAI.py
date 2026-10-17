@@ -62,7 +62,8 @@ class COpenAITokenPool:
             "rewriteModelName", ""
         )
         self.stream = config.getBackendConfigSection(section_name).get("stream", False)
-        self.thinking_mode = config.getBackendConfigSection(section_name).get('thinkingMode', 'default')
+        backend_config = config.getBackendConfigSection(section_name)
+        self.thinking_mode = backend_config.get('thinkingEnabled', backend_config.get('thinkingMode', False))
         self.timeout = config.getBackendConfigSection(section_name).get(
             "apiTimeout", 60
         )
@@ -151,7 +152,7 @@ class COpenAITokenPool:
             )
             try:
                 from GalTransl.Thinking import thinking_body
-                body = thinking_body(getattr(self, 'thinking_mode', 'default'))
+                body = thinking_body(getattr(self, 'thinking_mode', False), token.domain, token.model_name)
                 if body:
                     create_kwargs['extra_body'] = body
                 response = client.chat.completions.create(**create_kwargs)

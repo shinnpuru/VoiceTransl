@@ -113,7 +113,7 @@ class TranslationIntegrationTests(unittest.TestCase):
                 source.write_text(json.dumps([{'start': 1, 'end': 2, 'message': '原文一'}, {'start': 3, 'end': 4, 'message': '原文二'}]), encoding='utf-8')
                 make_lrc(str(source), str(root / 'input.orig.lrc'))
                 config = yaml.safe_load(DEFAULT_PROJECT_CONFIG_YAML)
-                config['backendSpecific']['OpenAI-Compatible'].update(tokens=[{'token': 'test', 'endpoint': f'http://127.0.0.1:{server.server_port}', 'modelName': 'test'}], stream=stream, thinkingMode='enable_thinking', apiErrorWait=0)
+                config['backendSpecific']['OpenAI-Compatible'].update(tokens=[{'token': 'test', 'endpoint': f'http://127.0.0.1:{server.server_port}', 'modelName': 'test'}], stream=stream, apiErrorWait=0)
                 config['common'].update(language='ja2zh-cn', workersPerProject=1, splitFile='no', **{'gpt.restoreContextMode': False})
                 config['common'].update(**{
                     'gpt.change_prompt': 'AdditionalPrompt',
@@ -146,7 +146,7 @@ class TranslationIntegrationTests(unittest.TestCase):
                 for prompt in translation_prompts:
                     self.assertIn('约定译名', prompt)
                     self.assertIn('保持人物语气自然。', prompt)
-                self.assertTrue(all(payload.get('enable_thinking') is False for payload in received))
+                self.assertTrue(all(payload.get('chat_template_kwargs') == {'enable_thinking': False} for payload in received))
                 self.assertTrue(source.exists())
                 self.assertEqual(active, [])
         finally:
