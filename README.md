@@ -42,6 +42,21 @@ VoiceTransl聆译是一站式离线AI视频字幕生成和翻译软件，支持W
 
 使用说明请见 [视频教程](https://www.bilibili.com/video/BV12FjN6iEmz)。
 
+### 使用 Agent 完成听写与翻译
+
+下载 [Agent 技能包 voicetransl-cli-skill.zip](https://github.com/shinnpuru/VoiceTransl/releases/download/v1.31/voicetransl-cli-skill.zip)，将其中的 `voicetransl-cli` 文件夹解压到 `%USERPROFILE%\.codex\skills\`，保留完整的 `scripts` 子目录。其他支持技能的 Agent 也可读取包内的 `SKILL.md`，按照其中的流程执行任务。
+
+安装后，可以向 Agent 发送：
+
+```text
+使用 $voicetransl-cli，通过 F:\VoiceTransl 听写 D:\Media\sample.mp4，
+将日语翻译为简体中文，导出原文、译文和双语 SRT 到 D:\Media\output。
+```
+
+Agent 会直接调用打包版中的 FFmpeg、CrispASR、翻译和人声分离等命令行工具，无需启动 GUI。技能包含音频提取、听写打轴、翻译、字幕导出、长音频分段合并和结果检查的完整流程；已有 SRT 可以直接翻译。
+
+辅助脚本需要可用的 Python 3.10+，会检测并缓存已有解释器，后续任务直接复用，**不会每次创建 venv**。PyYAML 已随技能附带，普通本地听写翻译无需安装 Python 包；视频下载和摘要的额外依赖仅在缺失时安装一次。离线使用需准备相应模型，在线翻译需配置接口、模型和密钥。详细命令与环境配置见 [SKILL.md](SKILL.md)。
+
 ## 声明
 
 本软件仅供学习交流使用，不得用于商业用途。本软件不对任何使用者的行为负责，不保证翻译结果的准确性。使用本软件即代表您同意自行承担使用本软件的风险，包括但不限于版权风险、法律风险等。请遵守当地法律法规，不要使用本软件进行任何违法行为。
