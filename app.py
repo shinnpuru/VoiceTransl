@@ -649,6 +649,7 @@ class ConcurrentTranslationPool:
     """并发翻译线程池：每文件一个工作线程，工作空间隔离"""
 
     verbose_galtransl: bool = False  # 类变量：详细模式开关，由 MainWindow 在启动翻译前设置
+    discard_original_srt: bool = False  # 类变量：翻译完成后是否删除听写产出的原始字幕
 
     @staticmethod
     def _translate_worker_thread(task_queue, result_queue, msg_queue, stop_event,
@@ -786,7 +787,8 @@ class ConcurrentTranslationPool:
         # 生成翻译后字幕
         send_status(_("status_translating_srt", idx=worker_idx, base=base))
         ConcurrentTranslationPool._generate_output_impl(
-            json_src, base_path, output_dir, output_format, workspace, orig_srt_path)
+            json_src, base_path, output_dir, output_format, workspace, orig_srt_path,
+            ConcurrentTranslationPool.discard_original_srt)
 
         send_status(_("status_translating_done", idx=worker_idx, base=base))
 
@@ -824,7 +826,7 @@ class ConcurrentTranslationPool:
         return config_path
 
     @staticmethod
-    def _generate_output_impl(json_src, base_path, output_dir, output_format, workspace, orig_srt_path=''):
+    def _generate_output_impl(json_src, base_path, output_dir, output_format, workspace, orig_srt_path='', discard_original_srt=False):
         """在线程中生成输出文件"""
         json_name = os.path.basename(json_src)
         gt_output_json = os.path.join(workspace, 'gt_output', json_name)
@@ -858,6 +860,16 @@ class ConcurrentTranslationPool:
                                 os.path.join(output_dir, base_name + '.combine.lrc'))
 
         # Preserve original subtitles, including user-supplied SRT files.
+        # 可选：听写产出的原始字幕（日文 .srt）在翻译成品写好后删除。
+        # 用户自己提供的 SRT 绝不删除，双语合并也已在上方完成。
+        if discard_original_srt:
+            candidate = os.path.abspath(base_path + '.srt')
+            protected = os.path.abspath(orig_srt_path) if orig_srt_path else ''
+            if candidate != protected and os.path.isfile(candidate):
+                try:
+                    os.remove(candidate)
+                except OSError:
+                    pass
 
     def __init__(self, project_dir, base_config_path, max_concurrent, stop_event,
                  msg_queue, local_model_config=None):
@@ -1356,6 +1368,7 @@ class MainWindow(QMainWindow):
             'output_format': output_format,
             'output_target': self.output_target_combo.currentData(),
             'output_type': self.output_type_combo.currentData(),
+            'discard_original_srt': self.discard_original_srt_checkbox.isChecked(),
             'subtitle_font': subtitle_font,
             'output_dir': output_dir,
             'use_input_dir': use_input_dir,
@@ -1427,6 +1440,7 @@ class MainWindow(QMainWindow):
             (('use_input_dir_checkbox',), 'io_use_input_dir_tip'),
             (('io_output_target_label', 'output_target_combo'), 'io_output_target_tip'),
             (('io_output_type_label', 'output_type_combo'), 'io_output_type_tip'),
+            (('discard_original_srt_checkbox',), 'io_discard_original_tip'),
             (('enable_segment_checkbox',), 'io_segment_tip'),
             (('dict_before_label', 'before_dict'), 'dict_before_tip'),
             (('dict_gpt_label', 'gpt_dict'), 'dict_gpt_tip'),
@@ -2084,6 +2098,8 @@ class MainWindow(QMainWindow):
             _type_idx = self.output_type_combo.findData(_output_type)
             if _type_idx >= 0:
                 self.output_type_combo.setCurrentIndex(_type_idx)
+            self.discard_original_srt_checkbox.setChecked(
+                gui_settings.get('discard_original_srt', True) is not False)
             subtitle_font = gui_settings.get('subtitle_font', '')
             if subtitle_font:
                 self.subtitle_font_combo.setCurrentText(subtitle_font)
@@ -2777,6 +2793,10 @@ class MainWindow(QMainWindow):
         format_layout.addWidget(self.output_type_combo, 1)
         self.input_output_layout.addLayout(format_layout)
 
+        # 听写产出的原始字幕（日文 .srt）默认不留存，只保留翻译成品
+        self.discard_original_srt_checkbox = QCheckBox(_("io_discard_original_label"))
+        self.discard_original_srt_checkbox.setChecked(True)
+        self.input_output_layout.addWidget(self.discard_original_srt_checkbox)
 
         button_layout = QHBoxLayout()
         self.run_button = QPushButton(_("io_run_btn"))
@@ -4299,6 +4319,10 @@ class MainWorker(QObject):
 
         # 同步详细日志模式设置到翻译线程池
         ConcurrentTranslationPool.verbose_galtransl = self.master.verbose_checkbox.isChecked()
+        # 同步「翻译完成后不保存原始字幕文件」设置到翻译线程池
+        ConcurrentTranslationPool.discard_original_srt = (
+            self.master.discard_original_srt_checkbox.isChecked()
+        )
 
         self._translation_pool = None
         if need_translate:
@@ -4443,7 +4467,9 @@ class MainWorker(QObject):
                             json_src=json_path,
                             output_dir=current_output_dir,
                             output_format=output_format,
-                            orig_srt_path='',
+                            # 这里复用的是已存在的字幕文件，可能由用户自己放置，
+                            # 记下路径，避免「不保存原始字幕」把它删掉。
+                            orig_srt_path=os.path.abspath(existing_srt),
                         )
                         self._translation_pool.submit(tf)
                     continue
