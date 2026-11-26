@@ -2051,7 +2051,14 @@ class MainWindow(QMainWindow):
             self.enable_transcription_checkbox.setChecked(bool(enable_transcription))
             self.enable_translation_checkbox.setChecked(bool(enable_translation))
             saved_language = gui_settings.get('language', 'ja')
-            self.asr_length_slider.setValue(int(gui_settings.get('asr_max_chars', 0)))
+            # 该滑条在 v1.30 及更早版本从不传给 CrispASR，历史上残留的极小值（1~5）当时毫无影响；
+            # 现在它会被换算成 --max-len，把字幕切成 3~5 字的碎片（“先輩気/持ちい/い”），
+            # 触发大量行数不一致重试，表现为翻译变慢且结果错乱。升级时这类历史值直接归零，
+            # 恢复“沿用参数文件”的行为。
+            saved_max_chars = int(gui_settings.get('asr_max_chars', 0) or 0)
+            if 0 < saved_max_chars <= 5:
+                saved_max_chars = 0
+            self.asr_length_slider.setValue(saved_max_chars)
             language_index = self.transcription_lang.findData(saved_language)
             if language_index >= 0:
                 self.transcription_lang.setCurrentIndex(language_index)
