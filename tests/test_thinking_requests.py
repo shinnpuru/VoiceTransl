@@ -42,6 +42,17 @@ class ThinkingRequestTests(unittest.TestCase):
                          {'chat_template_kwargs': {'enable_thinking': False}})
         self.assertEqual(thinking_body(False, 'https://api.example.org', 'unrecognized'), {})
 
+    def test_loopback_translation_finetune_skips_thinking_switch(self):
+        # llama.cpp turns "thinking off" into an empty thinking block that these
+        # models cannot answer from, so the switch must not be sent at all.
+        for model in ('sakura-14b-qwen3-v1.5-q6k.gguf', 'Sakura-1.5B', 'galtransl-8b'):
+            with self.subTest(model=model):
+                self.assertEqual(thinking_body(False, 'http://localhost:8989', model), {})
+                self.assertEqual(
+                    thinking_body(True, 'http://localhost:8989', model),
+                    {'chat_template_kwargs': {'enable_thinking': True}},
+                )
+
     def test_translation_and_availability_send_provider_controls_over_http(self):
         received = []
         class Handler(BaseHTTPRequestHandler):
